@@ -316,7 +316,8 @@ canvas.dragging { cursor:grabbing; }
         </div>
       </div>
       <label class="check"><input type="checkbox" id="ogConnectors" checked> <span data-i="og_conn">Board-to-board connectors</span></label>
-      <div style="font-size:11px; color:var(--muted); margin-top:6px" data-i="og_hint">28 mm openGrid lattice; 3 OG tiles = 2 Gridfinity units. Heads wider than 7.7 mm are clamped to fit the node.</div>
+      <button id="btnOgReset" type="button" data-i="og_reset" style="margin-top:6px"></button>
+        <div style="font-size:11px; color:var(--muted); margin-top:6px" data-i="og_hint">28 mm openGrid lattice; 3 OG tiles = 2 Gridfinity units. Heads wider than 7.7 mm are clamped to fit the node.</div>
 
       <h2 style="margin-top:16px" data-i="stacking_h">Stacking copies</h2>
       <label class="check"><input type="checkbox" id="ogStack"> <span data-i="stacking_on">Stack copies upward</span></label>
@@ -449,14 +450,18 @@ canvas.dragging { cursor:grabbing; }
 
   <main class="stage">
     <canvas id="gl"></canvas>
+    <canvas id="ov" style="position:absolute; inset:0; width:100%; height:100%; pointer-events:none" hidden></canvas>
     <div class="badge" id="badge">Preview</div>
     <div class="views">
       <button data-view="iso" data-i="v_iso">Iso</button>
       <button data-view="front" data-i="v_front">Front</button>
       <button data-view="top" data-i="v_top">Top</button>
       <button data-view="under" data-i="v_under">Under</button>
+      <button id="btn3d" class="active">3D</button>
+      <button id="btn2d">2D</button>
     </div>
-    <div class="hint" data-i="hint">drag to orbit &middot; scroll to zoom &middot; shift-drag to pan</div>
+    <div class="hint" id="hint3d" data-i="hint">drag to orbit &middot; scroll to zoom &middot; shift-drag to pan</div>
+    <div class="hint" id="hint2d" data-i="hint_2d" hidden></div>
     <div class="err" id="err" hidden></div>
   </main>
 </div>
@@ -1939,7 +1944,9 @@ function ogEmitLevel(p, d, seg) {
   }
 
   /* ---- strips along interior lattice lines ----
-     Ends ride the node diamond plane {a+s = B(z)} (every node kind). */
+     Ends ride the node diamond plane {a+s = B(z)} (every node kind).
+     A removed cell (ogCellOff) takes its own half-strip with it: the
+     window runs to the lattice line, the neighbour keeps its half. */
   function stripSeg(P, Ex, Ey) {
     var lv = [];
     for (var k = 0; k < ZS.length; k++) {
@@ -1950,15 +1957,18 @@ function ogEmitLevel(p, d, seg) {
     }
     piece(function (s) { addSolid(s, lv, [], []); });
   }
+  function cellOff(col, row) {
+    return !!(p.ogCellOff && p.ogCellOff[col + "," + row]);
+  }
   for (var j = 1; j < H; j++) for (var cx2 = 0; cx2 < W; cx2++) {
     var P0 = [(cx2 - W / 2) * OG.TILE, (H / 2 - j) * OG.TILE];
-    stripSeg(P0, [1, 0], [0, 1]);                  // into the tile above
-    stripSeg(P0, [1, 0], [0, -1]);                 // into the tile below
+    if (!cellOff(cx2, j - 1)) stripSeg(P0, [1, 0], [0, 1]);    // into the tile above
+    if (!cellOff(cx2, j)) stripSeg(P0, [1, 0], [0, -1]);       // into the tile below
   }
   for (var i2 = 1; i2 < W; i2++) for (var cy2 = 0; cy2 < H; cy2++) {
     var P1 = [(i2 - W / 2) * OG.TILE, (H / 2 - cy2) * OG.TILE];
-    stripSeg(P1, [0, -1], [1, 0]);                 // into the tile right
-    stripSeg(P1, [0, -1], [-1, 0]);                // into the tile left
+    if (!cellOff(i2, cy2)) stripSeg(P1, [0, -1], [1, 0]);      // into the tile right
+    if (!cellOff(i2 - 1, cy2)) stripSeg(P1, [0, -1], [-1, 0]); // into the tile left
   }
 
   /* ---- border ribs: lofts ending on the node diamond planes ---- */
@@ -2083,6 +2093,34 @@ function ogEmitLevel(p, d, seg) {
     var b = BAt(z);
     return [[c[0] + b, c[1]], [c[0], c[1] + b], [c[0] - b, c[1]], [c[0], c[1] - b]];
   }
+  /* Sector of the node diamond owned by one remaining cell: a lofted
+     right triangle from the node centre, legs on the two planes that
+     separate the cell from its neighbours there, hypotenuse on the
+     diamond plane -- so the pieces still abut exactly.
+     fill node: world-axis quadrant (cells sit diagonally);
+     edge node: half of the half-diamond, split on the perp axis. */
+  function sectorTri(c, X, Y) {                 // X, Y unit boundary dirs
+    return function (z) {
+      var b = BAt(z);
+      var pts = [[c[0], c[1]], [c[0] + X[0] * b, c[1] + X[1] * b],
+                 [c[0] + Y[0] * b, c[1] + Y[1] * b]];
+      if (signedArea(pts.map(function (w) { return [w[0], w[1]]; })) < 0)
+        pts.reverse();
+      return pts;
+    };
+  }
+  function cellsAt(ix, iy) {                    // present cells around a node
+    var cand = [[ix - 1, iy - 1], [ix, iy - 1], [ix - 1, iy], [ix, iy]];
+    var out = [];
+    for (var c = 0; c < 4; c++) {
+      var col = cand[c][0], row = cand[c][1];
+      if (col < 0 || col >= W || row < 0 || row >= H || cellOff(col, row)) continue;
+      out.push({ col: col, row: row,
+                 dx: (col === ix - 1) ? -1 : 1,
+                 dy: (row === iy - 1) ? 1 : -1 });
+    }
+    return out;
+  }
   for (var iy3 = 0; iy3 <= H; iy3++) for (var ix3 = 0; ix3 <= W; ix3++) {
     var info = ogNodeInfo(W, H, ix3, iy3);
     if (!info) continue;
@@ -2090,11 +2128,23 @@ function ogEmitLevel(p, d, seg) {
     var inw = info.kind === "edge"
       ? (ix3 === 0 ? [1, 0] : ix3 === W ? [-1, 0] : iy3 === 0 ? [0, -1] : [0, 1])
       : [(ix3 === 0 ? 1 : -1), (iy3 === 0 ? -1 : 1)];
+    var alive = cellsAt(ix3, iy3);
     if (info.kind === "fill") {
+      if (alive.length === 4) {
       (function (nx, ny) {
         piece(function (s) { ogFillDiamond(s, nx, ny, T, p, segHole, lite, ZS, BAt); });
       })(nx, ny);
+      } else {
+        for (var q3 = 0; q3 < alive.length; q3++) {
+          var tri = sectorTri([nx, ny], [alive[q3].dx, 0], [0, alive[q3].dy]);
+          var lv3 = [];
+          for (var k3 = 0; k3 < ZS.length; k3++)
+            lv3.push({ loop: tri(ZS[k3]), z: ZS[k3] });
+          piece(function (s) { addSolid(s, lv3, [], []); });
+        }
+      }
     } else if (info.kind === "outer") {         // quarter: {ID <= |x|+|y| <= B}
+      if (alive.length) {
       var lvq = [];
       for (var k8 = 0; k8 < ZS.length; k8++) {
         var zq = ZS[k8], bq = BAt(zq);
@@ -2108,8 +2158,11 @@ function ogEmitLevel(p, d, seg) {
         lvq.push({ loop: pts2, z: zq });
       }
       piece(function (s) { addSolid(s, lvq, [], []); });
+      }
     } else {                                    // edge node: half diamond
-      var isConn = !!p.ogConnectors;
+      if (alive.length === 2) {
+      var isConn = !!p.ogConnectors &&
+        !(p.ogConnOff && p.ogConnOff[ogNodeKey(nx, ny)]);
       var mk = halfDia([nx, ny], inw);
       if (!isConn) {
         var lv = [];
@@ -2138,6 +2191,15 @@ function ogEmitLevel(p, d, seg) {
             lt.unshift({ loop: mk(z2, false), z: z2 });
           piece(function (s) { addSolid(s, lt, [], []); });
         }
+      }
+      } else if (alive.length === 1) {
+        var ppE = [-inw[1], inw[0]];
+        var sE = (alive[0].dx * ppE[0] + alive[0].dy * ppE[1]) >= 0 ? 1 : -1;
+        var triE = sectorTri([nx, ny], [ppE[0] * sE, ppE[1] * sE], inw);
+        var lvE = [];
+        for (var kE = 0; kE < ZS.length; kE++)
+          lvE.push({ loop: triE(ZS[kE]), z: ZS[kE] });
+        piece(function (s) { addSolid(s, lvE, [], []); });
       }
     }
   }
@@ -2348,6 +2410,13 @@ function addPrismY(mesh, section, y0, y1) {
 /* Classification of lattice node (ix,iy) of a W x H tile rectangle:
    which of the four touching tiles exist.  Mirrors the openGrid Studio
    placement logic (their y index runs top-down). */
+/* Canonical feature key: node coords in 28 mm units from the board
+   centre -- the same convention pickScrew has always used for
+   ogScrewOff; connectors use it too (ogConnOff). */
+function ogNodeKey(nx, ny) {
+  return Math.round(nx / OG.TILE) + "," + Math.round(ny / OG.TILE);
+}
+
 function ogNodeInfo(W, H, ix, iy) {
   var nw = ix >= 1 && ix <= W && iy >= 1 && iy <= H;
   var ne = ix <= W - 1 && iy >= 1 && iy <= H;
@@ -2370,17 +2439,38 @@ function deriveBoard(p) {
   var T = lite ? OG.LITE_T : OG.FULL_T;
   var levels = p.ogStack ? Math.max(2, Math.min(10, Math.round(+p.ogStackN || 2))) : 1;
   var stackGap = Math.max(0, +p.ogStackGap || 0);
-  var holes = (W - 1) * (H - 1);
-  var offN = 0, offK;
-  if (p.ogScrews && p.ogScrewOff)
-    for (offK in p.ogScrewOff) if (p.ogScrewOff[offK]) offN++;
+  function cellOff(col, row) {
+    return !!(p.ogCellOff && p.ogCellOff[col + "," + row]);
+  }
+  function all4(ix, iy) {
+    return !cellOff(ix - 1, iy - 1) && !cellOff(ix, iy - 1) &&
+           !cellOff(ix - 1, iy) && !cellOff(ix, iy);
+  }
+  var snap = 0, ix, iy;
+  for (var row = 0; row < H; row++) for (var col = 0; col < W; col++)
+    if (!cellOff(col, row)) snap++;
+  function nodeKey(ix2, iy2) {
+    return ogNodeKey((ix2 - W / 2) * OG.TILE, (H / 2 - iy2) * OG.TILE);
+  }
+  var screws = 0;
+  if (p.ogScrews && W >= 2 && H >= 2)
+    for (ix = 1; ix < W; ix++) for (iy = 1; iy < H; iy++)
+      if (all4(ix, iy) && !(p.ogScrewOff && p.ogScrewOff[nodeKey(ix, iy)])) screws++;
+  var conns = 0;
+  if (p.ogConnectors) {
+    function edgeOK(ix2, iy2) {
+      return all4(ix2, iy2) && !(p.ogConnOff && p.ogConnOff[nodeKey(ix2, iy2)]);
+    }
+    for (ix = 1; ix < W; ix++) { if (edgeOK(ix, 0)) conns++; if (edgeOK(ix, H)) conns++; }
+    for (iy = 1; iy < H; iy++) { if (edgeOK(0, iy)) conns++; if (edgeOK(W, iy)) conns++; }
+  }
   return {
     W: W, H: H, T: T, lite: lite, OX: W * OG.TILE, OY: H * OG.TILE,
     levels: levels, stackGap: stackGap,
     HTotal: levels * T + (levels - 1) * stackGap,
-    snapHoles: W * H,
-    screwHoles: p.ogScrews ? Math.max(0, holes - offN) : 0,
-    connHoles: p.ogConnectors ? 2 * (W + H) - 4 : 0,
+    snapHoles: snap,
+    screwHoles: screws,
+    connHoles: conns,
     valid: W >= 1 && H >= 1
   };
 }
@@ -2788,6 +2878,10 @@ var I18N = {
     og_back_shrink: "Pocket shrink (mm)", og_back_cs: "Pocket countersink", og_back_cs_deg: "Pocket angle (&deg;)",
     og_conn: "Board-to-board connectors",
     og_hint: "28 mm openGrid lattice; 3 OG tiles = 2 Gridfinity units. Lite = the top 4 mm band of the full board. Click a screw hole in the preview to remove or restore it.",
+    hint_2d: "2D editor: click a screw, a connector or a cell to toggle it. Drag pans, wheel zooms.",
+    og_reset: "Reset edits",
+    og_reset_done: "Click-edits cleared.",
+    saved_fallback: "The chosen folder is blocked by OrcaSlicer's plugin write policy, the file was saved next to the plugin instead: {p}",
     exp_dir: "Export folder (empty = plugin default)",
     exp_dir_pick: "\ud83d\udcc2 Browse\u2026",
     dir_asking: "Opening the system folder dialog \u2014 choose a folder there\u2026",
@@ -2868,6 +2962,10 @@ var I18N = {
     og_back_shrink: "Уменьшение кармана (мм)", og_back_cs: "Зенковка кармана", og_back_cs_deg: "Угол кармана (&deg;)",
     og_conn: "Коннекторы панель-панель",
     og_hint: "Решётка openGrid 28 мм; 3 тайла OG = 2 юнита Gridfinity. Lite = верхние 4 мм полной доски. Клик по отверстию под винт в превью удаляет или возвращает его.",
+    hint_2d: "Редактор 2D: клик по винту, коннектору или ячейке — удалить/вернуть. Перетаскивание — панорама, колесо — масштаб.",
+    og_reset: "Сбросить правки",
+    og_reset_done: "Правки сброшены.",
+    saved_fallback: "Выбранная папка запрещена политикой записи плагинов OrcaSlicer, файл сохранён рядом с плагином: {p}",
     exp_dir: "Папка экспорта (пусто = папка плагина)",
     exp_dir_pick: "\ud83d\udcc2 Обзор\u2026",
     dir_asking: "Открываю системный диалог \u2014 выберите папку в нём\u2026",
@@ -3178,6 +3276,191 @@ function setView(v) {
   if (v === "under") { cam.az = -Math.PI/2; cam.el = -1.20; }
   frameCamera();
 }
+/* ---- 2D top view + board editor --------------------------------------
+   2D is an orthographic straight-down view with a DOM-canvas overlay
+   that marks every editable feature. A click (3D keeps the old pick)
+   toggles: screw bore at a lattice crossing, board-to-board connector
+   at a border node, or a whole cell -- the window is trimmed on the
+   lattice lines, neighbours keep their half of the shared rib. */
+var EDIT2D = false, editScale = 20, editCenter = [0, 0];
+var hover2D = null, hoverKey = null;
+var ov = document.getElementById("ov");
+var ovCtx = ov && ov.getContext ? ov.getContext("2d") : null;
+
+function mOrtho(l, r, b, t, n, f) {
+  return new Float32Array([
+    2 / (r - l), 0, 0, 0,
+    0, 2 / (t - b), 0, 0,
+    0, 0, -2 / (f - n), 0,
+    -(r + l) / (r - l), -(t + b) / (t - b), -(f + n) / (f - n), 1]);
+}
+function w2sX(x) { return (x - editCenter[0]) * editScale + canvas.clientWidth / 2; }
+function w2sY(y) { return canvas.clientHeight / 2 - (y - editCenter[1]) * editScale; }
+function s2wX(px) { return (px - canvas.clientWidth / 2) / editScale + editCenter[0]; }
+function s2wY(py) { return editCenter[1] - (py - canvas.clientHeight / 2) / editScale; }
+
+function enter2D() {
+  if (EDIT2D) return;
+  EDIT2D = true;
+  document.getElementById("btn2d").className = "active";
+  document.getElementById("btn3d").className = "";
+  document.getElementById("hint2d").hidden = false;
+  document.getElementById("hint3d").hidden = true;
+  if (ov) ov.hidden = false;
+  var d = deriveBoard(P);
+  var cw = canvas.clientWidth || 800, chh = canvas.clientHeight || 600;
+  editScale = Math.max(2, Math.min(cw, chh) / (Math.max(d.OX, d.OY) + 40));
+  editCenter = [0, 0];
+  hover2D = null; hoverKey = null;
+  canvas.style.cursor = P.mode === "og" ? "crosshair" : "";
+  needsDraw = true;
+}
+function exit2D() {
+  if (!EDIT2D) return;
+  EDIT2D = false;
+  document.getElementById("btn2d").className = "";
+  document.getElementById("btn3d").className = "active";
+  document.getElementById("hint2d").hidden = true;
+  document.getElementById("hint3d").hidden = false;
+  if (ov) ov.hidden = true;
+  hover2D = null; hoverKey = null;
+  canvas.style.cursor = (P.mode === "og" && P.ogScrews) ? "crosshair" : "";
+  needsDraw = true;
+}
+
+/* every editable feature of the og board, with its current state */
+function ogEditItems() {
+  var d = deriveBoard(P), T = OG.TILE;
+  var items = { W: d.W, H: d.H, cells: [], screws: [], conns: [] };
+  function off(m, k) { return !!(P[m] && P[m][k]); }
+  function ok4(ix, iy) {
+    return !off("ogCellOff", (ix - 1) + "," + (iy - 1)) &&
+           !off("ogCellOff", ix + "," + (iy - 1)) &&
+           !off("ogCellOff", (ix - 1) + "," + iy) &&
+           !off("ogCellOff", ix + "," + iy);
+  }
+  for (var row = 0; row < d.H; row++)
+    for (var col = 0; col < d.W; col++)
+      items.cells.push({ col: col, row: row,
+        x: (col + 0.5 - d.W / 2) * T, y: (d.H / 2 - row - 0.5) * T,
+        off: off("ogCellOff", col + "," + row) });
+  if (P.ogScrews && d.W >= 2 && d.H >= 2)
+    for (var iy = 1; iy < d.H; iy++)
+      for (var ix = 1; ix < d.W; ix++)
+        items.screws.push({ ix: ix, iy: iy, key: ogNodeKey((ix - d.W / 2) * T, (d.H / 2 - iy) * T),
+          x: (ix - d.W / 2) * T, y: (d.H / 2 - iy) * T,
+          state: !ok4(ix, iy) ? "auto"
+              : (off("ogScrewOff", ogNodeKey((ix - d.W / 2) * T, (d.H / 2 - iy) * T)) ? "off" : "on") });
+  if (P.ogConnectors) {
+    function edge(ix, iy) {
+      items.conns.push({ ix: ix, iy: iy, key: ogNodeKey((ix - d.W / 2) * T, (d.H / 2 - iy) * T),
+        x: (ix - d.W / 2) * T, y: (d.H / 2 - iy) * T,
+        state: !ok4(ix, iy) ? "auto"
+            : (off("ogConnOff", ogNodeKey((ix - d.W / 2) * T, (d.H / 2 - iy) * T)) ? "off" : "on") });
+    }
+    for (var i = 1; i < d.W; i++) { edge(i, 0); edge(i, d.H); }
+    for (var j = 1; j < d.H; j++) { edge(0, j); edge(d.W, j); }
+  }
+  return items;
+}
+
+function pick2DTarget(wx, wy) {
+  if (P.mode !== "og") return null;
+  var it = ogEditItems(), best = null, i, dx, dy, d2;
+  for (i = 0; i < it.screws.length; i++) {          /* 3.5 mm */
+    if (it.screws[i].state === "auto") continue;
+    dx = wx - it.screws[i].x; dy = wy - it.screws[i].y;
+    d2 = dx * dx + dy * dy;
+    if (d2 <= 12.25 && (!best || d2 < best.d2))
+      best = { kind: "screw", d2: d2, key: it.screws[i].key };
+  }
+  if (best) return best;
+  for (i = 0; i < it.conns.length; i++) {           /* 4.2 mm */
+    if (it.conns[i].state === "auto") continue;
+    dx = wx - it.conns[i].x; dy = wy - it.conns[i].y;
+    d2 = dx * dx + dy * dy;
+    if (d2 <= 17.64 && (!best || d2 < best.d2))
+      best = { kind: "conn", d2: d2, key: it.conns[i].key };
+  }
+  if (best) return best;
+  var col = Math.floor(wx / OG.TILE + it.W / 2);
+  var row = Math.floor(it.H / 2 - wy / OG.TILE);
+  if (col >= 0 && col < it.W && row >= 0 && row < it.H)
+    return { kind: "cell", key: col + "," + row };
+  return null;
+}
+
+function pick2D(e) {
+  var r = canvas.getBoundingClientRect();
+  var t = pick2DTarget(s2wX(e.clientX - r.left), s2wY(e.clientY - r.top));
+  if (!t) return;
+  var map = t.kind === "screw" ? "ogScrewOff" : t.kind === "conn" ? "ogConnOff" : "ogCellOff";
+  if (!P[map]) P[map] = {};
+  if (P[map][t.key]) delete P[map][t.key]; else P[map][t.key] = 1;
+  hover2D = null; hoverKey = null;
+  onChange(false);
+}
+
+function drawOverlay() {
+  if (!EDIT2D || !ovCtx || P.mode !== "og") return;
+  var dpr = Math.min(window.devicePixelRatio || 1, 2);
+  var w = Math.max(1, Math.round(canvas.clientWidth * dpr));
+  var h = Math.max(1, Math.round(canvas.clientHeight * dpr));
+  if (ov.width !== w || ov.height !== h) { ov.width = w; ov.height = h; }
+  var c = ovCtx;
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+  var it = ogEditItems(), i, e;
+  var T = OG.TILE;
+  for (i = 0; i < it.cells.length; i++) {
+    if (!it.cells[i].off) continue;
+    var x0 = w2sX(it.cells[i].x - T / 2), y0 = w2sY(it.cells[i].y + T / 2);
+    c.fillStyle = "rgba(224,76,64,0.28)";
+    c.fillRect(x0, y0, T * editScale, T * editScale);
+    c.strokeStyle = "rgba(224,76,64,0.95)"; c.lineWidth = 1.5;
+    c.strokeRect(x0, y0, T * editScale, T * editScale);
+  }
+  for (i = 0; i < it.screws.length; i++) {
+    e = it.screws[i];
+    var rr = Math.max(4, (P.ogScrewD || 4.1) / 2 * editScale);
+    c.beginPath(); c.arc(w2sX(e.x), w2sY(e.y), rr, 0, 6.2832);
+    if (e.state === "on") { c.fillStyle = "rgba(64,180,110,0.22)"; c.fill();
+      c.strokeStyle = "rgba(46,150,92,0.95)"; }
+    else { c.strokeStyle = "rgba(224,76,64,0.95)"; c.setLineDash([3, 3]); }
+    c.lineWidth = 1.5; c.stroke(); c.setLineDash([]);
+  }
+  for (i = 0; i < it.conns.length; i++) {
+    e = it.conns[i];
+    var r2 = Math.max(4, 3.2 * editScale);
+    var cx = w2sX(e.x), cy = w2sY(e.y);
+    c.beginPath();
+    c.moveTo(cx, cy - r2); c.lineTo(cx + r2, cy);
+    c.lineTo(cx, cy + r2); c.lineTo(cx - r2, cy); c.closePath();
+    if (e.state === "on") { c.fillStyle = "rgba(70,140,220,0.20)"; c.fill();
+      c.strokeStyle = "rgba(58,120,200,0.95)"; }
+    else { c.strokeStyle = "rgba(224,76,64,0.95)"; c.setLineDash([3, 3]); }
+    c.lineWidth = 1.5; c.stroke(); c.setLineDash([]);
+  }
+  if (hover2D) {
+    c.strokeStyle = "rgba(60,150,255,0.95)"; c.lineWidth = 2.5;
+    if (hover2D.kind === "cell") {
+      var pp = hover2D.key.split(",");
+      var hx = (+pp[0] + 0.5 - it.W / 2) * T, hy = (it.H / 2 - +pp[1] - 0.5) * T;
+      c.strokeRect(w2sX(hx - T / 2), w2sY(hy + T / 2), T * editScale, T * editScale);
+    } else {
+      var list = hover2D.kind === "screw" ? it.screws : it.conns;
+      for (i = 0; i < list.length; i++)
+        if (list[i].key === hover2D.key) {
+          var hr = (hover2D.kind === "screw"
+            ? Math.max(4, (P.ogScrewD || 4.1) / 2 * editScale)
+            : Math.max(4, 3.2 * editScale)) + 3;
+          c.beginPath();
+          c.arc(w2sX(list[i].x), w2sY(list[i].y), hr, 0, 6.2832);
+          c.stroke();
+        }
+    }
+  }
+}
 
 var darkMQ = window.matchMedia("(prefers-color-scheme: dark)");
 function palette() {
@@ -3204,11 +3487,19 @@ function draw() {
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
   var ce = Math.cos(cam.el), se = Math.sin(cam.el);
-  var eye = [cam.target[0] + cam.dist * Math.cos(cam.az) * ce,
-             cam.target[1] + cam.dist * Math.sin(cam.az) * ce,
-             cam.target[2] + cam.dist * se];
-  var proj = mPersp(0.62, w / h, 1, 6000);
-  var view = mLookAt(eye, cam.target, [0, 0, 1]);
+  var eye, proj, view;
+  if (EDIT2D) {
+    var hw = canvas.clientWidth / 2 / editScale, hh = canvas.clientHeight / 2 / editScale;
+    proj = mOrtho(-hw, hw, -hh, hh, 1, 2000);
+    eye = [editCenter[0], editCenter[1], 500];
+    view = mLookAt(eye, [editCenter[0], editCenter[1], 0], [0, 1, 0]);
+  } else {
+    eye = [cam.target[0] + cam.dist * Math.cos(cam.az) * ce,
+           cam.target[1] + cam.dist * Math.sin(cam.az) * ce,
+           cam.target[2] + cam.dist * se];
+    proj = mPersp(0.62, w / h, 1, 6000);
+    view = mLookAt(eye, cam.target, [0, 0, 1]);
+  }
   var mvp = mMul(proj, view);
   var d = P.mode === "plate" ? derivePlate(P)
         : P.mode === "og" ? deriveBoard(P) : derive(P);
@@ -3234,6 +3525,7 @@ function draw() {
     gl.bindBuffer(gl.ARRAY_BUFFER, binBuf.nrm); gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, 0, 0);
     gl.drawArrays(gl.TRIANGLES, 0, binBuf.n);
   }
+  drawOverlay();
 }
 
 function loop() {
@@ -3708,6 +4000,9 @@ function stem() {
     var ogSfx = db.levels > 1
       ? "_stack" + db.levels + "_g" + (Math.round(Math.max(0, +P.ogStackGap || 0) * 100) / 100)
       : "";
+    if ((P.ogCellOff && Object.keys(P.ogCellOff).length) ||
+        (P.ogConnOff && Object.keys(P.ogConnOff).length) ||
+        (P.ogScrewOff && Object.keys(P.ogScrewOff).length)) ogSfx += "_edit";
     return "opengrid_board_" + db.W + "x" + db.H + "_" +
            (db.T === OG.LITE_T ? "lite" : "full") + ogSfx;
   }
@@ -3843,8 +4138,18 @@ if (btnExact) {
   });
 });
 
-document.querySelectorAll(".views button").forEach(function (b) {
-  b.addEventListener("click", function () { setView(b.dataset.view); });
+document.querySelectorAll(".views button[data-view]").forEach(function (b) {
+  b.addEventListener("click", function () { exit2D(); setView(b.dataset.view); });
+});
+document.getElementById("btn2d").addEventListener("click", enter2D);
+document.getElementById("btn3d").addEventListener("click", exit2D);
+
+/* clear every click-edit (screws, connectors, removed cells) */
+var btnOgReset = document.getElementById("btnOgReset");
+if (btnOgReset) btnOgReset.addEventListener("click", function () {
+  P.ogCellOff = {}; P.ogConnOff = {}; P.ogScrewOff = {};
+  onChange(false);
+  note(t("og_reset_done"), false);
 });
 
 /* ---- render button ---- */
@@ -4072,7 +4377,8 @@ if (ORCA && typeof ORCA.onMessage === "function") {
       note(t("bed_manual", { e: m.error }), true);
     }
     if (m.type === "saved") {
-      note(t(m.pending ? "saved_pending" : "saved_import", { p: m.path }), true);
+      note(m.fallback ? t("saved_fallback", { p: m.path })
+                      : t(m.pending ? "saved_pending" : "saved_import", { p: m.path }), true);
     }
     if (m.type === "placed") {
       note(m.placed ? t("placed_ok", { p: m.path })
@@ -4180,6 +4486,21 @@ canvas.addEventListener("pointerdown", function (e) {
   needsDraw = true;
 });
 canvas.addEventListener("pointermove", function (e) {
+  if (EDIT2D) {
+    if (dragging && last) {
+      var ddx = e.clientX - last[0], ddy = e.clientY - last[1];
+      editCenter[0] -= ddx / editScale;
+      editCenter[1] += ddy / editScale;
+      last = [e.clientX, e.clientY];
+      needsDraw = true;
+    } else if (P.mode === "og") {
+      var rc = canvas.getBoundingClientRect();
+      var t = pick2DTarget(s2wX(e.clientX - rc.left), s2wY(e.clientY - rc.top));
+      var tk = t ? t.kind + ":" + t.key : "";
+      if (tk !== hoverKey) { hoverKey = tk; hover2D = t; needsDraw = true; }
+    }
+    return;
+  }
   if (!last) return;
   var dx = e.clientX - last[0], dy = e.clientY - last[1];
   last = [e.clientX, e.clientY];
@@ -4198,7 +4519,7 @@ function endDrag(e) {
   if (!last) return;
   if (downXY && e && typeof e.clientX === "number") {
     var mdx = e.clientX - downXY[0], mdy = e.clientY - downXY[1];
-    if (mdx * mdx + mdy * mdy < 36) pickScrew(e);
+    if (mdx * mdx + mdy * mdy < 36) { if (EDIT2D) pick2D(e); else pickScrew(e); }
   }
   downXY = null;
   last = null; dragging = false;
@@ -4210,7 +4531,10 @@ canvas.addEventListener("pointercancel", endDrag);
 canvas.addEventListener("contextmenu", function (e) { e.preventDefault(); });
 canvas.addEventListener("wheel", function (e) {
   e.preventDefault();
-  cam.dist = Math.max(30, Math.min(3000, cam.dist * Math.exp(e.deltaY * 0.0012)));
+  if (EDIT2D)
+    editScale = Math.max(1.5, Math.min(120, editScale * Math.exp(-e.deltaY * 0.0012)));
+  else
+    cam.dist = Math.max(30, Math.min(3000, cam.dist * Math.exp(e.deltaY * 0.0012)));
   needsDraw = true;
 }, { passive: false });
 window.addEventListener("resize", function () { needsDraw = true; });
