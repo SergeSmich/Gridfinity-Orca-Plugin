@@ -147,6 +147,7 @@ canvas { display:block; width:100%; height:100%; touch-action:none; cursor:grab;
 canvas.dragging { cursor:grabbing; }
 .views { position:absolute; top:14px; right:14px; display:flex; gap:6px; }
 .views button { padding:5px 10px; font-size:12px; background:var(--panel); opacity:.94; }
+.views button.active { opacity:1; background:#2f6f4f; color:#fff; }
 .badge {
   position:absolute; top:14px; left:14px; font-size:11.5px; padding:4px 10px;
   border-radius:999px; background:var(--badge); color:var(--muted);
@@ -450,7 +451,7 @@ canvas.dragging { cursor:grabbing; }
 
   <main class="stage">
     <canvas id="gl"></canvas>
-    <canvas id="ov" style="position:absolute; inset:0; width:100%; height:100%; pointer-events:none" hidden></canvas>
+    <canvas id="ov" style="position:absolute; inset:0; width:100%; height:100%; pointer-events:none; display:none"></canvas>
     <div class="badge" id="badge">Preview</div>
     <div class="views">
       <button data-view="iso" data-i="v_iso">Iso</button>
@@ -1972,7 +1973,7 @@ function ogEmitLevel(p, d, seg) {
   }
 
   /* ---- border ribs: lofts ending on the node diamond planes ---- */
-  function borderEdge(O, A, Sd, len) {          // A x Sd = +z; a runs 0..len
+  function borderEdge(O, A, Sd, len, cellOf) {  // A x Sd = +z; a runs 0..len
     var zs = ZS;
     function ribPiece(l0, l1) {                 // a = l(z,s) boundaries
       var lv = [];
@@ -1991,13 +1992,18 @@ function ogEmitLevel(p, d, seg) {
     for (var nn = 1; nn < len / OG.TILE; nn++)
       cuts.push(minus(nn * OG.TILE), plus(nn * OG.TILE));
     cuts.push(minus(len));
-    for (var ci = 0; ci + 1 < cuts.length; ci += 2) ribPiece(cuts[ci], cuts[ci + 1]);
+    for (var ci = 0; ci + 1 < cuts.length; ci += 2)
+      if (!cellOf || !cellOf(ci >> 1)) ribPiece(cuts[ci], cuts[ci + 1]);
   }
   var OX2 = d.OX / 2, OY2 = d.OY / 2;
-  borderEdge([-OX2, -OY2], [1, 0], [0, 1], d.OX);        // south
-  borderEdge([OX2, OY2], [-1, 0], [0, -1], d.OX);        // north
-  borderEdge([-OX2, OY2], [0, -1], [1, 0], d.OY);        // west
-  borderEdge([OX2, -OY2], [0, 1], [-1, 0], d.OY);        // east
+  borderEdge([-OX2, -OY2], [1, 0], [0, 1], d.OX,
+             function (k) { return cellOff(k, H - 1); });             // south
+  borderEdge([OX2, OY2], [-1, 0], [0, -1], d.OX,
+             function (k) { return cellOff(W - 1 - k, 0); });         // north
+  borderEdge([-OX2, OY2], [0, -1], [1, 0], d.OY,
+             function (k) { return cellOff(0, k); });                 // west
+  borderEdge([OX2, -OY2], [0, 1], [-1, 0], d.OY,
+             function (k) { return cellOff(W - 1, H - 1 - k); });     // east
 
   /* ---- node blobs: z-lofted diamonds ---- */
   /* connector pocket band: full T/2 +-1.2; lite keeps the upper part
@@ -2093,22 +2099,6 @@ function ogEmitLevel(p, d, seg) {
     var b = BAt(z);
     return [[c[0] + b, c[1]], [c[0], c[1] + b], [c[0] - b, c[1]], [c[0], c[1] - b]];
   }
-  /* Sector of the node diamond owned by one remaining cell: a lofted
-     right triangle from the node centre, legs on the two planes that
-     separate the cell from its neighbours there, hypotenuse on the
-     diamond plane -- so the pieces still abut exactly.
-     fill node: world-axis quadrant (cells sit diagonally);
-     edge node: half of the half-diamond, split on the perp axis. */
-  function sectorTri(c, X, Y) {                 // X, Y unit boundary dirs
-    return function (z) {
-      var b = BAt(z);
-      var pts = [[c[0], c[1]], [c[0] + X[0] * b, c[1] + X[1] * b],
-                 [c[0] + Y[0] * b, c[1] + Y[1] * b]];
-      if (signedArea(pts.map(function (w) { return [w[0], w[1]]; })) < 0)
-        pts.reverse();
-      return pts;
-    };
-  }
   function cellsAt(ix, iy) {                    // present cells around a node
     var cand = [[ix - 1, iy - 1], [ix, iy - 1], [ix - 1, iy], [ix, iy]];
     var out = [];
@@ -2121,46 +2111,31 @@ function ogEmitLevel(p, d, seg) {
     }
     return out;
   }
+  /* Node kinds follow ogstudio's classifyNode: the blob is the union
+     of one FULL centred corner wedge per adjacent tile, so 3 tiles --
+     or 2 diagonal ones -- still leave the complete diamond; 2 same-side
+     tiles leave the half diamond (a connector seat), 1 leaves the
+     corner quarter, none leaves nothing.  Each tile also owns the rib
+     material on its own side, so a deleted cell takes its half-strips
+     and its outer border segment with it. */
   for (var iy3 = 0; iy3 <= H; iy3++) for (var ix3 = 0; ix3 <= W; ix3++) {
-    var info = ogNodeInfo(W, H, ix3, iy3);
-    if (!info) continue;
-    var nx = (ix3 - W / 2) * OG.TILE, ny = (H / 2 - iy3) * OG.TILE;
-    var inw = info.kind === "edge"
-      ? (ix3 === 0 ? [1, 0] : ix3 === W ? [-1, 0] : iy3 === 0 ? [0, -1] : [0, 1])
-      : [(ix3 === 0 ? 1 : -1), (iy3 === 0 ? -1 : 1)];
     var alive = cellsAt(ix3, iy3);
-    if (info.kind === "fill") {
-      if (alive.length === 4) {
+    var cnt = alive.length;
+    if (!cnt) continue;
+    var nx = (ix3 - W / 2) * OG.TILE, ny = (H / 2 - iy3) * OG.TILE;
+    /* diagonal pair (both dx and dy differ) still owns the FULL diamond;
+       a same-row / same-column pair owns the half diamond facing it */
+    var isDiag = cnt === 2 &&
+      alive[0].dx !== alive[1].dx && alive[0].dy !== alive[1].dy;
+    var isFill = cnt >= 3 || isDiag;
+    if (isFill) {
       (function (nx, ny) {
         piece(function (s) { ogFillDiamond(s, nx, ny, T, p, segHole, lite, ZS, BAt); });
       })(nx, ny);
-      } else {
-        for (var q3 = 0; q3 < alive.length; q3++) {
-          var tri = sectorTri([nx, ny], [alive[q3].dx, 0], [0, alive[q3].dy]);
-          var lv3 = [];
-          for (var k3 = 0; k3 < ZS.length; k3++)
-            lv3.push({ loop: tri(ZS[k3]), z: ZS[k3] });
-          piece(function (s) { addSolid(s, lv3, [], []); });
-        }
-      }
-    } else if (info.kind === "outer") {         // quarter: {ID <= |x|+|y| <= B}
-      if (alive.length) {
-      var lvq = [];
-      for (var k8 = 0; k8 < ZS.length; k8++) {
-        var zq = ZS[k8], bq = BAt(zq);
-        var q = [[ID, 0], [bq, 0], [bq / 2, bq / 2], [0, bq],
-                 [0, ID], [ID / 2, ID / 2]];
-        var pts2 = q.map(function (t) {
-          return [nx + inw[0] * t[0], ny + inw[1] * t[1], zq];
-        });
-        if (signedArea(pts2.map(function (w) { return [w[0], w[1]]; })) < 0)
-          pts2.reverse();
-        lvq.push({ loop: pts2, z: zq });
-      }
-      piece(function (s) { addSolid(s, lvq, [], []); });
-      }
-    } else {                                    // edge node: half diamond
-      if (alive.length === 2) {
+    } else if (cnt === 2) {                     // edge: half diamond on the cells' side
+      {
+      var inw = (alive[0].dx === alive[1].dx)
+        ? [alive[0].dx, 0] : [0, alive[0].dy];
       var isConn = !!p.ogConnectors &&
         !(p.ogConnOff && p.ogConnOff[ogNodeKey(nx, ny)]);
       var mk = halfDia([nx, ny], inw);
@@ -2192,14 +2167,23 @@ function ogEmitLevel(p, d, seg) {
           piece(function (s) { addSolid(s, lt, [], []); });
         }
       }
-      } else if (alive.length === 1) {
-        var ppE = [-inw[1], inw[0]];
-        var sE = (alive[0].dx * ppE[0] + alive[0].dy * ppE[1]) >= 0 ? 1 : -1;
-        var triE = sectorTri([nx, ny], [ppE[0] * sE, ppE[1] * sE], inw);
-        var lvE = [];
-        for (var kE = 0; kE < ZS.length; kE++)
-          lvE.push({ loop: triE(ZS[kE]), z: ZS[kE] });
-        piece(function (s) { addSolid(s, lvE, [], []); });
+      }
+    } else {                                    // single cell: corner quarter
+      {
+      var inw1 = [alive[0].dx, alive[0].dy];
+      var lvq = [];
+      for (var k8 = 0; k8 < ZS.length; k8++) {
+        var zq = ZS[k8], bq = BAt(zq);
+        var q = [[ID, 0], [bq, 0], [bq / 2, bq / 2], [0, bq],
+                 [0, ID], [ID / 2, ID / 2]];
+        var pts2 = q.map(function (t) {
+          return [nx + inw1[0] * t[0], ny + inw1[1] * t[1], zq];
+        });
+        if (signedArea(pts2.map(function (w) { return [w[0], w[1]]; })) < 0)
+          pts2.reverse();
+        lvq.push({ loop: pts2, z: zq });
+      }
+      piece(function (s) { addSolid(s, lvq, [], []); });
       }
     }
   }
@@ -2442,9 +2426,19 @@ function deriveBoard(p) {
   function cellOff(col, row) {
     return !!(p.ogCellOff && p.ogCellOff[col + "," + row]);
   }
-  function all4(ix, iy) {
-    return !cellOff(ix - 1, iy - 1) && !cellOff(ix, iy - 1) &&
-           !cellOff(ix - 1, iy) && !cellOff(ix, iy);
+  /* ogstudio classifyNode: 3 cells or 2 diagonal -> full diamond (screw
+     seat), 2 same-side -> half diamond (connector seat), 1 -> corner
+     quarter, 0 -> no node at all. */
+  function nodeClass(ix2, iy2) {
+    var nw = ix2 >= 1 && iy2 >= 1 && !cellOff(ix2 - 1, iy2 - 1);
+    var ne = ix2 <= W - 1 && iy2 >= 1 && !cellOff(ix2, iy2 - 1);
+    var sw = ix2 >= 1 && iy2 <= H - 1 && !cellOff(ix2 - 1, iy2);
+    var se = ix2 <= W - 1 && iy2 <= H - 1 && !cellOff(ix2, iy2);
+    var n = (nw ? 1 : 0) + (ne ? 1 : 0) + (sw ? 1 : 0) + (se ? 1 : 0);
+    if (!n) return "none";
+    if (n >= 3 || (n === 2 && ((nw && se) || (ne && sw)))) return "fill";
+    if (n === 2) return "edge";
+    return "outer";
   }
   var snap = 0, ix, iy;
   for (var row = 0; row < H; row++) for (var col = 0; col < W; col++)
@@ -2453,17 +2447,15 @@ function deriveBoard(p) {
     return ogNodeKey((ix2 - W / 2) * OG.TILE, (H / 2 - iy2) * OG.TILE);
   }
   var screws = 0;
-  if (p.ogScrews && W >= 2 && H >= 2)
+  if (p.ogScrews)
     for (ix = 1; ix < W; ix++) for (iy = 1; iy < H; iy++)
-      if (all4(ix, iy) && !(p.ogScrewOff && p.ogScrewOff[nodeKey(ix, iy)])) screws++;
+      if (nodeClass(ix, iy) === "fill" &&
+          !(p.ogScrewOff && p.ogScrewOff[nodeKey(ix, iy)])) screws++;
   var conns = 0;
-  if (p.ogConnectors) {
-    function edgeOK(ix2, iy2) {
-      return all4(ix2, iy2) && !(p.ogConnOff && p.ogConnOff[nodeKey(ix2, iy2)]);
-    }
-    for (ix = 1; ix < W; ix++) { if (edgeOK(ix, 0)) conns++; if (edgeOK(ix, H)) conns++; }
-    for (iy = 1; iy < H; iy++) { if (edgeOK(0, iy)) conns++; if (edgeOK(W, iy)) conns++; }
-  }
+  if (p.ogConnectors)
+    for (ix = 0; ix <= W; ix++) for (iy = 0; iy <= H; iy++)
+      if (nodeClass(ix, iy) === "edge" &&
+          !(p.ogConnOff && p.ogConnOff[nodeKey(ix, iy)])) conns++;
   return {
     W: W, H: H, T: T, lite: lite, OX: W * OG.TILE, OY: H * OG.TILE,
     levels: levels, stackGap: stackGap,
@@ -3306,7 +3298,7 @@ function enter2D() {
   document.getElementById("btn3d").className = "";
   document.getElementById("hint2d").hidden = false;
   document.getElementById("hint3d").hidden = true;
-  if (ov) ov.hidden = false;
+  if (ov) ov.style.display = "block";
   var d = deriveBoard(P);
   var cw = canvas.clientWidth || 800, chh = canvas.clientHeight || 600;
   editScale = Math.max(2, Math.min(cw, chh) / (Math.max(d.OX, d.OY) + 40));
@@ -3322,7 +3314,13 @@ function exit2D() {
   document.getElementById("btn3d").className = "active";
   document.getElementById("hint2d").hidden = true;
   document.getElementById("hint3d").hidden = false;
-  if (ov) ov.hidden = true;
+  if (ov) {
+    if (ovCtx) {
+      ovCtx.setTransform(1, 0, 0, 1, 0, 0);
+      ovCtx.clearRect(0, 0, ov.width, ov.height);
+    }
+    ov.style.display = "none";
+  }
   hover2D = null; hoverKey = null;
   canvas.style.cursor = (P.mode === "og" && P.ogScrews) ? "crosshair" : "";
   needsDraw = true;
@@ -3333,34 +3331,36 @@ function ogEditItems() {
   var d = deriveBoard(P), T = OG.TILE;
   var items = { W: d.W, H: d.H, cells: [], screws: [], conns: [] };
   function off(m, k) { return !!(P[m] && P[m][k]); }
-  function ok4(ix, iy) {
-    return !off("ogCellOff", (ix - 1) + "," + (iy - 1)) &&
-           !off("ogCellOff", ix + "," + (iy - 1)) &&
-           !off("ogCellOff", (ix - 1) + "," + iy) &&
-           !off("ogCellOff", ix + "," + iy);
+  function nodeClass(ix, iy) {
+    var nw = ix >= 1 && iy >= 1 && !off("ogCellOff", (ix - 1) + "," + (iy - 1));
+    var ne = ix <= d.W - 1 && iy >= 1 && !off("ogCellOff", ix + "," + (iy - 1));
+    var sw = ix >= 1 && iy <= d.H - 1 && !off("ogCellOff", (ix - 1) + "," + iy);
+    var se = ix <= d.W - 1 && iy <= d.H - 1 && !off("ogCellOff", ix + "," + iy);
+    var n = (nw ? 1 : 0) + (ne ? 1 : 0) + (sw ? 1 : 0) + (se ? 1 : 0);
+    if (!n) return "none";
+    if (n >= 3 || (n === 2 && ((nw && se) || (ne && sw)))) return "fill";
+    if (n === 2) return "edge";
+    return "outer";
   }
   for (var row = 0; row < d.H; row++)
     for (var col = 0; col < d.W; col++)
       items.cells.push({ col: col, row: row,
         x: (col + 0.5 - d.W / 2) * T, y: (d.H / 2 - row - 0.5) * T,
         off: off("ogCellOff", col + "," + row) });
-  if (P.ogScrews && d.W >= 2 && d.H >= 2)
+  if (P.ogScrews)
     for (var iy = 1; iy < d.H; iy++)
       for (var ix = 1; ix < d.W; ix++)
-        items.screws.push({ ix: ix, iy: iy, key: ogNodeKey((ix - d.W / 2) * T, (d.H / 2 - iy) * T),
-          x: (ix - d.W / 2) * T, y: (d.H / 2 - iy) * T,
-          state: !ok4(ix, iy) ? "auto"
-              : (off("ogScrewOff", ogNodeKey((ix - d.W / 2) * T, (d.H / 2 - iy) * T)) ? "off" : "on") });
-  if (P.ogConnectors) {
-    function edge(ix, iy) {
-      items.conns.push({ ix: ix, iy: iy, key: ogNodeKey((ix - d.W / 2) * T, (d.H / 2 - iy) * T),
-        x: (ix - d.W / 2) * T, y: (d.H / 2 - iy) * T,
-        state: !ok4(ix, iy) ? "auto"
-            : (off("ogConnOff", ogNodeKey((ix - d.W / 2) * T, (d.H / 2 - iy) * T)) ? "off" : "on") });
-    }
-    for (var i = 1; i < d.W; i++) { edge(i, 0); edge(i, d.H); }
-    for (var j = 1; j < d.H; j++) { edge(0, j); edge(d.W, j); }
-  }
+        if (nodeClass(ix, iy) === "fill")
+          items.screws.push({ ix: ix, iy: iy, key: ogNodeKey((ix - d.W / 2) * T, (d.H / 2 - iy) * T),
+            x: (ix - d.W / 2) * T, y: (d.H / 2 - iy) * T,
+            state: off("ogScrewOff", ogNodeKey((ix - d.W / 2) * T, (d.H / 2 - iy) * T)) ? "off" : "on" });
+  if (P.ogConnectors)
+    for (var i = 0; i <= d.W; i++)
+      for (var j = 0; j <= d.H; j++)
+        if (nodeClass(i, j) === "edge")
+          items.conns.push({ ix: i, iy: j, key: ogNodeKey((i - d.W / 2) * T, (d.H / 2 - j) * T),
+            x: (i - d.W / 2) * T, y: (d.H / 2 - j) * T,
+            state: off("ogConnOff", ogNodeKey((i - d.W / 2) * T, (d.H / 2 - j) * T)) ? "off" : "on" });
   return items;
 }
 
@@ -3368,7 +3368,6 @@ function pick2DTarget(wx, wy) {
   if (P.mode !== "og") return null;
   var it = ogEditItems(), best = null, i, dx, dy, d2;
   for (i = 0; i < it.screws.length; i++) {          /* 3.5 mm */
-    if (it.screws[i].state === "auto") continue;
     dx = wx - it.screws[i].x; dy = wy - it.screws[i].y;
     d2 = dx * dx + dy * dy;
     if (d2 <= 12.25 && (!best || d2 < best.d2))
@@ -3376,7 +3375,6 @@ function pick2DTarget(wx, wy) {
   }
   if (best) return best;
   for (i = 0; i < it.conns.length; i++) {           /* 4.2 mm */
-    if (it.conns[i].state === "auto") continue;
     dx = wx - it.conns[i].x; dy = wy - it.conns[i].y;
     d2 = dx * dx + dy * dy;
     if (d2 <= 17.64 && (!best || d2 < best.d2))
