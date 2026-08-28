@@ -292,7 +292,9 @@ class _GridfinityCore:
             return
 
         try:
-            path = self._write_stl(message.get("name", ""), message.get("data", ""))
+            path = self._write_stl(message.get("name", ""),
+                                   message.get("data", ""),
+                                   message.get("dir", ""))
         except Exception as exc:
             reply({"type": "save_failed", "error": str(exc)})
             return
@@ -315,7 +317,7 @@ class _GridfinityCore:
 
         threading.Thread(target=worker, name="gridfinity-place", daemon=True).start()
 
-    def _write_stl(self, name, payload_b64):
+    def _write_stl(self, name, payload_b64, custom_dir=""):
         if not payload_b64:
             raise ValueError("no STL data was sent by the panel")
         data = base64.b64decode(payload_b64)
@@ -323,9 +325,18 @@ class _GridfinityCore:
             raise ValueError("STL payload is too short to be valid")
 
         # Writes are audited; the plugin folder is inside the allow-list, so
-        # anchor the output directory to this file rather than guessing a path.
+        # anchor the default output directory to this file rather than
+        # guessing a path.  A folder typed in the panel overrides it.
         out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), OUTPUT_DIRNAME)
-        os.makedirs(out_dir, exist_ok=True)
+        custom = (custom_dir or "").strip().strip('"').strip("'")
+        if custom:
+            cand = os.path.normpath(os.path.expanduser(custom))
+            if os.path.isfile(cand):
+                raise ValueError("export folder is a file: " + cand)
+            os.makedirs(cand, exist_ok=True)
+            out_dir = cand
+        else:
+            os.makedirs(out_dir, exist_ok=True)
 
         safe = re.sub(r"[^A-Za-z0-9._-]", "_", os.path.basename(name or ""))
         if not safe.lower().endswith(".stl"):
@@ -846,6 +857,10 @@ canvas.dragging { cursor:grabbing; }
       <label class="check" id="toPlateRow" hidden style="margin-bottom:10px">
         <input type="checkbox" id="toPlate" checked> <span data-i="to_plate">Add to build plate after export</span>
       </label>
+      <div class="row" id="exportDirRow" hidden style="margin-bottom:10px">
+        <label for="exportDir" data-i="exp_dir">Export folder</label>
+        <input id="exportDir" type="text" style="flex:1; min-width:0" spellcheck="false">
+      </div>
       <div id="prog" class="prog" hidden>
         <div class="track"><div class="fill" id="progFill"></div></div>
         <div class="lbl"><span id="progStage"></span><span id="progPct"></span></div>
@@ -1085,6 +1100,155 @@ function signedArea(poly) {
 function inTriangle(p, a, b, c) {
   var d1 = area2(a, b, p), d2 = area2(b, c, p), d3 = area2(c, a, p);
   return d1 >= -1e-12 && d2 >= -1e-12 && d3 >= -1e-12;
+}
+
+/* Hole bridging follows the approach used by earcut: for each hole (processed
+   left to right) cast a ray from its left-most vertex toward -x, take the
+   nearest edge crossing, then refine to a reflex vertex that is visible from
+   the hole. Sign convention here matches earcut: eArea < 0 means convex/CCW. */
+
+function eArea(p, q, r) { return -area2(p, q, r); }
+
+function ptInTri(ax, ay, bx, by, cx, cy, px, py) {
+  return (cx - px) * (ay - py) - (ax - px) * (cy - py) >= 0 &&
+         (ax - px) * (by - py) - (bx - px) * (ay - py) >= 0 &&
+         (bx - px) * (cy - py) - (cx - px) * (by - py) >= 0;
+}
+
+function locallyInside(poly, i, b) {
+  var n = poly.length;
+  var a = poly[i], prev = poly[(i - 1 + n) % n], next = poly[(i + 1) % n];
+  return eArea(prev, a, next) < 0
+    ? eArea(a, b, next) >= 0 && eArea(a, prev, b) >= 0
+    : eArea(a, b, prev) < 0 || eArea(a, next, b) < 0;
+}
+
+function findHoleBridge(poly, hx, hy) {
+  var n = poly.length, qx = -Infinity, m = -1, i;
+  for (i = 0; i < n; i++) {
+    var p = poly[i], pn = poly[(i + 1) % n];
+    if (hy <= p[1] && hy >= pn[1] && pn[1] !== p[1]) {
+      var x = p[0] + (hy - p[1]) * (pn[0] - p[0]) / (pn[1] - p[1]);
+      if (x <= hx && x > qx) {
+        qx = x;
+        m = p[0] < pn[0] ? i : (i + 1) % n;
+        if (x === hx) return m;
+      }
+    }
+  }
+  if (m < 0) return -1;
+
+  var mx = poly[m][0], my = poly[m][1], tanMin = Infinity, best = m;
+  for (i = 0; i < n; i++) {
+    var v = poly[i];
+    if (hx >= v[0] && v[0] >= mx && hx !== v[0] &&
+        ptInTri(hy < my ? hx : qx, hy, mx, my, hy < my ? qx : hx, hy, v[0], v[1])) {
+      var tan = Math.abs(hy - v[1]) / (hx - v[0]);
+      if (locallyInside(poly, i, [hx, hy]) &&
+          (tan < tanMin || (tan === tanMin && v[0] > poly[best][0]))) {
+        best = i; tanMin = tan;
+      }
+    }
+  }
+  return best;
+}
+
+// Splice one clockwise hole into the counter-clockwise polygon.
+function bridgeHole(poly, hole) {
+  var li = 0, i;
+  for (i = 1; i < hole.length; i++) if (hole[i][0] < hole[li][0]) li = i;
+  var target = findHoleBridge(poly, hole[li][0], hole[li][1]);
+  if (target < 0) return null;
+  var rot = hole.slice(li).concat(hole.slice(0, li));
+  return poly.slice(0, target + 1)
+             .concat(rot, [rot[0]], [poly[target]], poly.slice(target + 1));
+}
+
+function earClip(poly) {
+  var n = poly.length;
+  if (n < 3) return [];
+  var idx = [], i;
+  for (i = 0; i < n; i++) idx.push(i);
+  var tris = [], relax = 0;
+
+  while (idx.length > 3) {
+    var m = idx.length, found = -1, bestArea = 0;
+    for (var k = 0; k < m; k++) {
+      var i0 = idx[(k - 1 + m) % m], i1 = idx[k], i2 = idx[(k + 1) % m];
+      var a = poly[i0], b = poly[i1], c = poly[i2];
+      var ar = area2(a, b, c);
+      if (ar <= 1e-10) continue;
+      var ok = true;
+      if (relax === 0) {
+        var ab = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        var bc = Math.hypot(c[0] - b[0], c[1] - b[1]);
+        var ca = Math.hypot(a[0] - c[0], a[1] - c[1]);
+        for (var j = 0; j < m; j++) {
+          var t = idx[j];
+          if (t === i0 || t === i1 || t === i2) continue;
+          var q = poly[t];
+          // a duplicated bridge vertex sits exactly on a corner: not a blocker
+          if (samePt(q, a) || samePt(q, b) || samePt(q, c)) continue;
+          var d1 = area2(a, b, q), d2 = area2(b, c, q), d3 = area2(c, a, q);
+          if (d1 >= -1e-12 && d2 >= -1e-12 && d3 >= -1e-12) {
+            // a point lying ON an ear edge does not block the ear
+            var h = Math.min(Math.abs(d1) / (ab || 1),
+                             Math.abs(d2) / (bc || 1),
+                             Math.abs(d3) / (ca || 1));
+            if (h < 1e-7) continue;
+            ok = false;
+            break;
+          }
+        }
+      }
+      if (!ok) continue;
+      if (relax === 0) { found = k; break; }
+      if (ar > bestArea) { bestArea = ar; found = k; }
+    }
+    if (found < 0) {
+      if (relax === 0) { relax = 1; continue; }   // retry ignoring containment
+      break;                                      // unrecoverable
+    }
+    var mm = idx.length;
+    tris.push([idx[(found - 1 + mm) % mm], idx[found], idx[(found + 1) % mm]]);
+    idx.splice(found, 1);
+    relax = 0;
+  }
+  if (idx.length === 3) tris.push([idx[0], idx[1], idx[2]]);
+  return tris;
+}
+
+// outer: CCW. holes: array of loops (any winding). Returns {pts, tris}.
+function triangulate(outer, holes) {
+  var poly = signedArea(outer) < 0 ? reverseLoop(outer) : outer.slice();
+  if (holes && holes.length) {
+    var hs = holes.map(function (h) {
+      return signedArea(h) > 0 ? reverseLoop(h) : h.slice();     // holes clockwise
+    });
+    hs.sort(function (A, B) {
+      var ax = Infinity, bx = Infinity, i;
+      for (i = 0; i < A.length; i++) if (A[i][0] < ax) ax = A[i][0];
+      for (i = 0; i < B.length; i++) if (B[i][0] < bx) bx = B[i][0];
+      return ax - bx;
+    });
+    for (var i = 0; i < hs.length; i++) {
+      var next = bridgeHole(poly, hs[i]);
+      if (next) poly = next;
+    }
+  }
+  var tris = earClip(poly);
+  /* the ear clipper can give up on hostile shapes (deep notch pockets)
+     or return a subtly wrong fan: verify the covered area, and let the
+     DP triangulation (always completes a simple polygon) take over */
+  var want = Math.abs(signedArea(poly)), got = 0, ti;
+  for (ti = 0; ti < tris.length; ti++) {
+    var ta = area2(poly[tris[ti][0]], poly[tris[ti][1]], poly[tris[ti][2]]);
+    got += Math.abs(ta) / 2;
+  }
+  if (tris.length < poly.length - 2 ||
+      Math.abs(got - want) > 1e-6 * Math.max(1, want))
+    tris = triangulateDP(poly);
+  return { pts: poly, tris: tris };
 }
 
 /* Hole bridging follows the approach used by earcut: for each hole (processed
@@ -2252,59 +2416,80 @@ function ogEmitLevel(p, d, seg) {
      (original 4.6..6.8 minus the band shift) -- open through the top */
   var cz = lite ? (OG.FULL_T - OG.CONN_H / 2 - OG.LITE_CONN_FROM_TOP) - zShift
                 : T / 2 - OG.CONN_H / 2;
-  /* right-half outline (along, perp) from ogConnectorLoop; mirror it
-     into the full upper chain running left -> right along the border */
-  var cl = ogConnectorLoop((seg && seg.og) || 128), up = [];
-  for (var pi = 0; pi < cl.length; pi++)
-    if (cl[pi][1] >= -1e-6) up.push([cl[pi][0], Math.max(0, cl[pi][1])]);
-  if (up.length > 1 && up[0][0] > up[up.length - 1][0]) up.reverse();
-  /* full arc left -> right: up runs apex -> (+reach, 0), so the
-     mirrored half (reversed) climbs (-reach, 0) -> apex and the rest
-     descends to (+reach, 0); the apex appears exactly once */
-  var notch = up.map(function (q4) { return [-q4[0], q4[1]]; })
-    .reverse().concat(up.slice(1));
-  /* fixed high-res arc for resampling (independent of seg.og) */
-  var clHi = ogConnectorLoop(64), upHi = [];
-  for (var ph = 0; ph < clHi.length; ph++)
-    if (clHi[ph][1] >= -1e-6) upHi.push([clHi[ph][0], Math.max(0, clHi[ph][1])]);
-  if (upHi.length > 1 && upHi[0][0] > upHi[upHi.length - 1][0]) upHi.reverse();
-  var notchHi = upHi.map(function (q4) { return [-q4[0], q4[1]]; })
-    .reverse().concat(upHi.slice(1));
   function halfDia(c, inw) {   // inward unit (inw); perp = ccw90(inw)
     var pp = [-inw[1], inw[0]];
-    var reach = 0;
-    for (var wi = 0; wi < notch.length; wi++)
-      reach = Math.max(reach, Math.abs(notch[wi][0]));
-    function arcY(x) {
-      var j = 0;
-      while (j < notchHi.length - 2 && notchHi[j + 1][0] < x) j++;
-      var P = notchHi[j], Q = notchHi[j + 1];
-      var t = Math.abs(Q[0] - P[0]) < 1e-12 ? 0 : (x - P[0]) / (Q[0] - P[0]);
-      return Math.max(0, P[1] + (Q[1] - P[1]) * t);
+    /* ogstudio connector cut: the full teardrop outline, flat mouth on
+       the border (perp = 0), round pocket reaching 5.1 INTO the board --
+       90 deg to the border.  Its outer circle pokes up to ~6.18 from the
+       node, so on narrow faces (b = 5.898) it is clipped to the wedge
+       {|along| + perp <= b}; the clip chord lies on the wedge plane,
+       exactly where the real material ends. */
+    var tear = ogConnectorLoop((seg && seg.og) || 128).map(function (q4) {
+      return [q4[1], q4[0]];                     // (along, perp)
+    });
+    if (tear[0][0] > tear[tear.length - 1][0]) tear.reverse();
+    var mouthA = tear[0], mouthB = tear[tear.length - 1];
+    function wedgeClip(poly, b) {
+      var planes = [function (p) { return b - (p[0] + p[1]); },
+                    function (p) { return b - (-p[0] + p[1]); }];
+      for (var pi = 0; pi < 2; pi++) {
+        var f = planes[pi], out = [], prev = null, fp = 0;
+        for (var i = 0; i < poly.length; i++) {
+          var P = poly[i], fp2 = f(P);
+          if (prev !== null) {
+            if (fp >= 0 && fp2 < 0) out.push(isect(prev, P, fp, fp2));
+            else if (fp < 0 && fp2 >= 0) out.push(isect(prev, P, fp, fp2));
+          }
+          if (fp2 >= 0) out.push(P);
+          prev = P; fp = fp2;
+        }
+        poly = out;
+      }
+      return poly;
+      function isect(P, Q, fP, fQ) {
+        var t = fP / (fP - fQ);
+        return [P[0] + (Q[0] - P[0]) * t, P[1] + (Q[1] - P[1]) * t];
+      }
     }
-    function loop(z, withNotch, resample) {
+    /* clip the closed teardrop to the wedge and resample the open path
+       (mouth corner -> mouth corner) to a FIXED point count, so both
+       loops of a notch band always band up; the clipped chord lies on
+       the wedge plane -- exactly where their CSG prism meets the
+       material, so the removed volume matches their pipeline */
+    function resampleOpen(pts, n) {
+      var L = [0], tot = 0, i;
+      for (i = 1; i < pts.length; i++) {
+        tot += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+        L.push(tot);
+      }
+      if (tot < 1e-9 || pts.length < 2) return pts.slice();
+      var out = [], j = 0;
+      for (i = 0; i < n; i++) {
+        var tgt = tot * i / (n - 1);
+        while (j < L.length - 2 && L[j + 1] < tgt) j++;
+        var seg = (L[j + 1] - L[j]) || 1e-12;
+        var t = (tgt - L[j]) / seg;
+        out.push([pts[j][0] + (pts[j + 1][0] - pts[j][0]) * t,
+                  pts[j][1] + (pts[j + 1][1] - pts[j][1]) * t]);
+      }
+      return out;
+    }
+    var NOTCH_N = Math.min(24, tear.length);
+    function notchPath(b) {
+      /* clip 0.15 mm INSIDE the wedge plane: clipping exactly on it puts
+         the chord on top of the face edge (self-touching loop -- no
+         triangulator survives that); the 0.15 mm sliver difference to
+         their CSG cut is invisible and sub-print-resolution */
+      var cl = wedgeClip(tear, b - 0.15);
+      return resampleOpen(cl, NOTCH_N);
+    }
+    function loop(z, withNotch) {
       var b = BAt(z);
       var pts;
-      if (!withNotch || b < 1e-9) {
+      if (!withNotch || b < 5.15) {
         pts = [[-b, 0], [b, 0], [0, b]];
-      } else if (!resample) {
-        pts = [[-b, 0]].concat(notch).concat([[b, 0], [0, b]]);
       } else {
-        /* narrow faces: follow the arc but keep every point strictly
-           inside the wedge, so the loop stays simple and triangulates */
-        var mouth = Math.min(reach, b - 0.8);
-        var NS = 24;
-        var rs = [];
-        for (var k2 = 0; k2 < NS; k2++) {
-          var x2 = -mouth + 2 * mouth * k2 / (NS - 1);
-          var y2 = arcY(x2);
-          var lim = b - Math.abs(x2) - 0.02 -
-            0.004 * (0.5 + 0.5 * Math.sin(k2 * 2.399));   // wobble kills
-                                                          // collinear runs
-          if (y2 > lim) y2 = lim;
-          rs.push([x2, Math.max(0, y2)]);
-        }
-        pts = [[-b, 0]].concat(rs).concat([[b, 0], [0, b]]);
+        pts = [[-b, 0]].concat(notchPath(b)).concat([[b, 0], [0, b]]);
       }
       var out = pts.map(function (t) {
         return [c[0] + pp[0] * t[0] + inw[0] * t[1],
@@ -2363,10 +2548,9 @@ function ogEmitLevel(p, d, seg) {
             lb.push({ loop: mk(z1, false), z: z1 });
           piece(function (s) { addSolid(s, lb, [], []); });
         }
-        var resN = lite;      // narrow top face: resampled notch loops
         piece(function (s) {
-          addSolid(s, [{ loop: mk(z1, true, resN), z: z1 },
-                       { loop: mk(z2, true, resN), z: z2 }], [], []);
+          addSolid(s, [{ loop: mk(z1, true), z: z1 },
+                       { loop: mk(z2, true), z: z2 }], [], []);
         });
         if (z2 < T - 1e-9) {
           var lt = [];
@@ -2431,7 +2615,10 @@ function ogFillDiamond(m, nx, ny, T, p, seg, lite, ZS, BAt) {
     var b = BAt(z);
     return [[nx + b, ny], [nx, ny + b], [nx - b, ny], [nx, ny - b]];
   }
-  if (!p.ogScrews) {
+  /* clicking a screw hole in the preview toggles it off/on; the node
+     key is its position in 28 mm units (nx/ny are node coords) */
+  if (!p.ogScrews || (p.ogScrewOff &&
+      p.ogScrewOff[Math.round(nx / OG.TILE) + "," + Math.round(ny / OG.TILE)])) {
     var lv0 = [];
     for (var i0 = 0; i0 < ZS.length; i0++)
       lv0.push({ loop: dia(ZS[i0]), z: ZS[i0] });
@@ -2606,12 +2793,15 @@ function deriveBoard(p) {
   var levels = p.ogStack ? Math.max(2, Math.min(10, Math.round(+p.ogStackN || 2))) : 1;
   var stackGap = Math.max(0, +p.ogStackGap || 0);
   var holes = (W - 1) * (H - 1);
+  var offN = 0, offK;
+  if (p.ogScrews && p.ogScrewOff)
+    for (offK in p.ogScrewOff) if (p.ogScrewOff[offK]) offN++;
   return {
     W: W, H: H, T: T, lite: lite, OX: W * OG.TILE, OY: H * OG.TILE,
     levels: levels, stackGap: stackGap,
     HTotal: levels * T + (levels - 1) * stackGap,
     snapHoles: W * H,
-    screwHoles: p.ogScrews ? holes : 0,
+    screwHoles: p.ogScrews ? Math.max(0, holes - offN) : 0,
     connHoles: p.ogConnectors ? 2 * (W + H) - 4 : 0,
     valid: W >= 1 && H >= 1
   };
@@ -3019,7 +3209,8 @@ var I18N = {
     og_back: "Backside head pocket", og_back_inset: "Pocket depth (mm)",
     og_back_shrink: "Pocket shrink (mm)", og_back_cs: "Pocket countersink", og_back_cs_deg: "Pocket angle (&deg;)",
     og_conn: "Board-to-board connectors",
-    og_hint: "28 mm openGrid lattice; 3 OG tiles = 2 Gridfinity units. Lite = the top 4 mm band of the full board. Heads wider than 7.7 mm are clamped to fit the node.",
+    og_hint: "28 mm openGrid lattice; 3 OG tiles = 2 Gridfinity units. Lite = the top 4 mm band of the full board. Click a screw hole in the preview to remove or restore it.",
+    exp_dir: "Export folder (empty = plugin default)",
     og_summary: "{w} &times; {h} tiles &middot; snap {snap} &middot; screws {scr} &middot; connectors {conn}",
     h_binsize: "Bin Size", l_width: "Width", l_depth: "Depth", l_height: "Height",
     h_platesize: "Baseplate Size", pm_units: "Grid Units", pm_mm: "Dimensions (mm)",
@@ -3093,7 +3284,8 @@ var I18N = {
     og_back: "Карман головки с тыла", og_back_inset: "Глубина кармана (мм)",
     og_back_shrink: "Уменьшение кармана (мм)", og_back_cs: "Зенковка кармана", og_back_cs_deg: "Угол кармана (&deg;)",
     og_conn: "Коннекторы панель-панель",
-    og_hint: "Решётка openGrid 28 мм; 3 тайла OG = 2 юнита Gridfinity. Lite = верхние 4 мм полной доски. Головки шире 7,7 мм ограничиваются под узел.",
+    og_hint: "Решётка openGrid 28 мм; 3 тайла OG = 2 юнита Gridfinity. Lite = верхние 4 мм полной доски. Клик по отверстию под винт в превью удаляет или возвращает его.",
+    exp_dir: "Папка экспорта (пусто = папка плагина)",
     og_summary: "тайлов {w} &times; {h} &middot; снапов {snap} &middot; шурупов {scr} &middot; коннекторов {conn}",
     h_binsize: "Размер ящика", l_width: "Ширина", l_depth: "Глубина", l_height: "Высота",
     h_platesize: "Размер основания", pm_units: "Сетка (юниты)", pm_mm: "Размеры (мм)",
@@ -3227,6 +3419,12 @@ var ORCA = (window.orca && typeof window.orca.postMessage === "function") ? wind
 if (ORCA) {
   document.documentElement.classList.add("orca-host");
   document.getElementById("toPlateRow").hidden = false;
+  document.getElementById("exportDirRow").hidden = false;
+  var dirEl = document.getElementById("exportDir");
+  try { dirEl.value = localStorage.getItem("gf_export_dir") || ""; } catch (e2) {}
+  dirEl.addEventListener("input", function () {
+    try { localStorage.setItem("gf_export_dir", dirEl.value); } catch (e3) {}
+  });
   document.getElementById("bedRow").hidden = false;
 }
 
@@ -3370,7 +3568,8 @@ var renderCache = null;            // last full-detail build, reused by export
 var bedFrom = null;
 
 function frameCamera() {
-  var d = P.mode === "plate" ? derivePlate(P) : derive(P);
+  var d = P.mode === "plate" ? derivePlate(P)
+        : P.mode === "og" ? deriveBoard(P) : derive(P);
   var top = P.mode === "plate" ? d.HTotal : d.TOP;
   cam.target = [0, 0, top * 0.42];
   cam.dist = Math.max(d.OX, d.OY, top) * 2.0 + 55;
@@ -3415,7 +3614,8 @@ function draw() {
   var proj = mPersp(0.62, w / h, 1, 6000);
   var view = mLookAt(eye, cam.target, [0, 0, 1]);
   var mvp = mMul(proj, view);
-  var d = P.mode === "plate" ? derivePlate(P) : derive(P);
+  var d = P.mode === "plate" ? derivePlate(P)
+        : P.mode === "og" ? deriveBoard(P) : derive(P);
 
   gl.uniformMatrix4fv(U.uMVP, false, mvp);
   gl.uniform3fv(U.uEye, eye);
@@ -3478,6 +3678,7 @@ var FLOATS = ["wall","floorT","scoopR","labelD","labelW","fillet","plateBase","p
 var BOOLS = ["lip","scoop","label","mag","screw","plateConnectors","plateStack",
              "ogScrews","ogConnectors","ogCs","ogBackside","ogBackCs","ogStack"];
 var lastTris = 0;
+var lastMeshPos = null;
 
 function mmToUnits(mm) {
   return Math.max(1, Math.floor((mm + GAP) / GRID));
@@ -3792,6 +3993,8 @@ var fmt = function (n) { return (Math.round(n * 100) / 100).toString(); };
 
 function applyMesh(res, q) {
   quality = q;
+  lastMeshPos = res.mesh.pos;
+  canvas.style.cursor = (P.mode === "og" && P.ogScrews) ? "crosshair" : "";
   uploadMesh(res.mesh);
   uploadGround(Math.max(res.derived.OX, res.derived.OY) * 6 + 400);
   lastTris = res.mesh.count();
@@ -4103,7 +4306,9 @@ function buildAsync(p, seg, base, span, done, fail) {
     progSet(t("prog_building"), base + span);
     return defer(function () { done(renderCache.res); });
   }
-  var gen = p.mode === "plate" ? plateSteps(p, seg) : binSteps(p, seg);
+  var gen = p.mode === "plate" ? plateSteps(p, seg)
+        : p.mode === "og" ? boardSteps(p, seg)
+        : binSteps(p, seg);
   (function pump() {
     var until = performance.now() + SLICE_MS, n = 0, r;
     try {
@@ -4199,7 +4404,8 @@ btnStl.addEventListener("click", function () {
           try {
             ORCA.postMessage({
               type: "save_stl", name: name, data: b64,
-              place: document.getElementById("toPlate").checked
+              place: document.getElementById("toPlate").checked,
+              dir: document.getElementById("exportDir").value.trim()
             });
           } catch (e) { return failed(e); }
           finished(t("prog_sent"));
@@ -4267,11 +4473,98 @@ if (ORCA && typeof ORCA.onMessage === "function") {
   });
 }
 
+/* ---- pick a screw hole in the preview: click near it to toggle ---- */
+function mInv4(m) {
+  var a = [], inv = new Float32Array(16), i, j, k;
+  for (i = 0; i < 4; i++)
+    a.push([m[i * 4], m[i * 4 + 1], m[i * 4 + 2], m[i * 4 + 3]]);
+  for (i = 0; i < 4; i++)
+    for (j = 0; j < 4; j++) inv[i * 4 + j] = i === j ? 1 : 0;
+  for (i = 0; i < 4; i++) {
+    var piv = i;
+    for (j = i + 1; j < 4; j++)
+      if (Math.abs(a[j][i]) > Math.abs(a[piv][i])) piv = j;
+    if (piv !== i) {
+      var tr = a[i]; a[i] = a[piv]; a[piv] = tr;
+      for (j = 0; j < 4; j++) {
+        var tv = inv[i * 4 + j];
+        inv[i * 4 + j] = inv[piv * 4 + j];
+        inv[piv * 4 + j] = tv;
+      }
+    }
+    var dd = a[i][i] || 1e-12;
+    for (j = 0; j < 4; j++) { a[i][j] /= dd; inv[i * 4 + j] /= dd; }
+    for (k = 0; k < 4; k++) {
+      if (k === i) continue;
+      var f = a[k][i];
+      if (!f) continue;
+      for (j = 0; j < 4; j++) {
+        a[k][j] -= f * a[i][j];
+        inv[k * 4 + j] -= f * inv[i * 4 + j];
+      }
+    }
+  }
+  return inv;
+}
+
+function pickScrew(e) {
+  if (!lastMeshPos || P.mode !== "og") return;
+  var d = deriveBoard(P);
+  if (!P.ogScrews || d.W < 2 || d.H < 2) return;
+  var r = canvas.getBoundingClientRect();
+  var ndcX = ((e.clientX - r.left) / r.width) * 2 - 1;
+  var ndcY = -(((e.clientY - r.top) / r.height) * 2 - 1);
+  var ce = Math.cos(cam.el), se = Math.sin(cam.el);
+  var eye = [cam.target[0] + cam.dist * Math.cos(cam.az) * ce,
+             cam.target[1] + cam.dist * Math.sin(cam.az) * ce,
+             cam.target[2] + cam.dist * se];
+  var proj = mPersp(0.62, r.width / r.height, 1, 6000);
+  var inv = mInv4(mMul(proj, mLookAt(eye, cam.target, [0, 0, 1])));
+  function unproj(z) {
+    var x = inv[0] * ndcX + inv[4] * ndcY + inv[8] * z + inv[12];
+    var y = inv[1] * ndcX + inv[5] * ndcY + inv[9] * z + inv[13];
+    var z2 = inv[2] * ndcX + inv[6] * ndcY + inv[10] * z + inv[14];
+    var w2 = inv[3] * ndcX + inv[7] * ndcY + inv[11] * z + inv[15];
+    return [x / w2, y / w2, z2 / w2];
+  }
+  var p0 = unproj(-1), p1 = unproj(1);
+  var dx = p1[0] - p0[0], dy = p1[1] - p0[1], dz = p1[2] - p0[2];
+  var pos = lastMeshPos, bestT = Infinity, hit = null;
+  for (var i = 0; i + 8 < pos.length; i += 9) {
+    var ax = pos[i], ay = pos[i + 1], az = pos[i + 2];
+    var e1x = pos[i + 3] - ax, e1y = pos[i + 4] - ay, e1z = pos[i + 5] - az;
+    var e2x = pos[i + 6] - ax, e2y = pos[i + 7] - ay, e2z = pos[i + 8] - az;
+    var pvx = dy * e2z - dz * e2y, pvy = dz * e2x - dx * e2z, pvz = dx * e2y - dy * e2x;
+    var det = e1x * pvx + e1y * pvy + e1z * pvz;
+    if (det > -1e-12 && det < 1e-12) continue;
+    var inv2 = 1 / det, tvx = p0[0] - ax, tvy = p0[1] - ay, tvz = p0[2] - az;
+    var u = (tvx * pvx + tvy * pvy + tvz * pvz) * inv2;
+    if (u < -1e-9 || u > 1 + 1e-9) continue;
+    var qvx = tvy * e1z - tvz * e1y, qvy = tvz * e1x - tvx * e1z, qvz = tvx * e1y - tvy * e1x;
+    var v = (dx * qvx + dy * qvy + dz * qvz) * inv2;
+    if (v < -1e-9 || u + v > 1 + 1e-9) continue;
+    var t = (e2x * qvx + e2y * qvy + e2z * qvz) * inv2;
+    if (t > 1e-9 && t < bestT) {
+      bestT = t;
+      hit = [p0[0] + dx * t, p0[1] + dy * t];
+    }
+  }
+  if (!hit) return;
+  var ix = Math.round(hit[0] / OG.TILE), iy = Math.round(hit[1] / OG.TILE);
+  if (ix < 1 || ix > d.W - 1 || iy < 1 || iy > d.H - 1) return;
+  var key = ix + "," + iy;
+  if (!P.ogScrewOff) P.ogScrewOff = {};
+  if (P.ogScrewOff[key]) delete P.ogScrewOff[key]; else P.ogScrewOff[key] = 1;
+  rebuild("preview");
+  updateOgReadout();
+}
+
 /* ---- pointer interaction ---- */
-var last = null, panning = false;
+var last = null, panning = false, downXY = null;
 canvas.addEventListener("pointerdown", function (e) {
   canvas.setPointerCapture(e.pointerId);
   last = [e.clientX, e.clientY];
+  downXY = [e.clientX, e.clientY];
   panning = e.shiftKey || e.button === 2;
   dragging = true;
   canvas.classList.add("dragging");
@@ -4292,8 +4585,13 @@ canvas.addEventListener("pointermove", function (e) {
   }
   needsDraw = true;
 });
-function endDrag() {
+function endDrag(e) {
   if (!last) return;
+  if (downXY && e && typeof e.clientX === "number") {
+    var mdx = e.clientX - downXY[0], mdy = e.clientY - downXY[1];
+    if (mdx * mdx + mdy * mdy < 36) pickScrew(e);
+  }
+  downXY = null;
   last = null; dragging = false;
   canvas.classList.remove("dragging");
   needsDraw = true;

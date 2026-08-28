@@ -345,7 +345,9 @@ class _GridfinityCore:
             return
 
         try:
-            path = self._write_stl(message.get("name", ""), message.get("data", ""))
+            path = self._write_stl(message.get("name", ""),
+                                   message.get("data", ""),
+                                   message.get("dir", ""))
         except Exception as exc:
             reply({"type": "save_failed", "error": str(exc)})
             return
@@ -368,7 +370,7 @@ class _GridfinityCore:
 
         threading.Thread(target=worker, name="gridfinity-place", daemon=True).start()
 
-    def _write_stl(self, name, payload_b64):
+    def _write_stl(self, name, payload_b64, custom_dir=""):
         if not payload_b64:
             raise ValueError("no STL data was sent by the panel")
         data = base64.b64decode(payload_b64)
@@ -376,9 +378,18 @@ class _GridfinityCore:
             raise ValueError("STL payload is too short to be valid")
 
         # Writes are audited; the plugin folder is inside the allow-list, so
-        # anchor the output directory to this file rather than guessing a path.
+        # anchor the default output directory to this file rather than
+        # guessing a path.  A folder typed in the panel overrides it.
         out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), OUTPUT_DIRNAME)
-        os.makedirs(out_dir, exist_ok=True)
+        custom = (custom_dir or "").strip().strip('"').strip("'")
+        if custom:
+            cand = os.path.normpath(os.path.expanduser(custom))
+            if os.path.isfile(cand):
+                raise ValueError("export folder is a file: " + cand)
+            os.makedirs(cand, exist_ok=True)
+            out_dir = cand
+        else:
+            os.makedirs(out_dir, exist_ok=True)
 
         safe = re.sub(r"[^A-Za-z0-9._-]", "_", os.path.basename(name or ""))
         if not safe.lower().endswith(".stl"):
