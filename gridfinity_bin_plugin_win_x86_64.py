@@ -3033,7 +3033,7 @@ function stem() {
     }
     if (P.plateStack) {
       var gapTxt = (Math.round(Math.max(0, +P.plateStackGap || 0) * 100) / 100).toString();
-      return "gridfinity_baseplate_" + P.gx + "x" + P.gy + "_stack" + d.levels + "_g" + gapTxt;
+      return "gridfinity_baseplate_" + P.gx + "x" + P.gy + "_stack" + dp.levels + "_g" + gapTxt;
     }
     return "gridfinity_baseplate_" + P.gx + "x" + P.gy;
   }
