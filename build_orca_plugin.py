@@ -57,9 +57,9 @@ TEMPLATE = '''# /// script
 #
 # [tool.orcaslicer.plugin]
 # name = "Gridfinity Bin & Baseplate Generator"
-# description = "Parametric Gridfinity bins and interlocking baseplates: custom compartments, exact mm sizing with edge padding, stackable copies (180-degree alternation), EN/RU interface, 3D WebGL preview, and direct build plate drop."
+# description = "Parametric Gridfinity bins, interlocking baseplates, and openGrid boards: custom compartments, exact mm sizing with edge padding, flip-stacked copies, full board / lite openGrid types with screws, connectors and countersinks, EN/RU interface, 3D WebGL preview, and direct build plate drop."
 # author = "jonas"
-# version = "1.6.0"
+# version = "1.7.0"
 """Gridfinity bin and baseplate generator for OrcaSlicer.
 
 Registers two capabilities:

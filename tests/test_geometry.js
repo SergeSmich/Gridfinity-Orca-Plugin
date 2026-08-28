@@ -20,7 +20,7 @@ src = src.slice(0, src.indexOf("\n", cut));
 
 const moduleShim = { exports: {} };
 const G = new Function("module", "window", "document",
-  src + "\n;return { buildBin, buildPlate, derive, derivePlate, toSTL, DEFAULTS, plateSteps, Mesh };")(moduleShim, undefined, undefined);
+  src + "\n;return { buildBin, buildPlate, derive, derivePlate, toSTL, DEFAULTS, plateSteps, boardSteps, deriveBoard, ogEmitLevel, ogRibProfile, OG, Mesh };")(moduleShim, undefined, undefined);
 // the trailing DOM-free slice still executes the exports line above
 
 let failures = 0;
@@ -166,6 +166,86 @@ console.log("baseplate stacking:");
     return Math.abs(b0.lo[0] - b1.lo[0]) < 1e-6 && Math.abs(b0.hi[0] - b1.hi[0]) < 1e-6 &&
            Math.abs(b0.lo[1] - b1.lo[1]) < 1e-6 && Math.abs(b0.hi[1] - b1.hi[1]) < 1e-6;
   })());
+}
+
+console.log("openGrid board:");
+function boardParams(extra) {
+  return Object.assign({}, G.DEFAULTS, {
+    mode: "board", ogW: 2, ogH: 2, ogType: "full",
+    ogScrews: true, ogConnectors: true
+  }, extra || {});
+}
+{
+  const d = G.deriveBoard(boardParams());
+  check("derive: footprint 56x56, T 6.8", d.OX === 56 && d.OY === 56 && d.T === 6.8, JSON.stringify([d.OX, d.OY, d.T]));
+  check("derive: 4 snap, 1 screw, 4 conn holes", d.snapHoles === 4 && d.screwHoles === 1 && d.connHoles === 4, JSON.stringify([d.snapHoles, d.screwHoles, d.connHoles]));
+  const dLite = G.deriveBoard(boardParams({ ogType: "lite" }));
+  check("derive: Lite T 4 (top band of full board)", dLite.T === 4 && dLite.lite === true, JSON.stringify([dLite.T, dLite.lite]));
+
+  // every emitted piece must be a closed, positively-oriented solid
+  function auditPieces(name, p, seg) {
+    const d2 = G.deriveBoard(p);
+    const r = G.ogEmitLevel(p, d2, seg);
+    let ok = true, total = 0;
+    for (const s of r.solids) {
+      if (!watertight(s)) { ok = false; break; }
+      const v = volume(s);
+      if (!(v > 0)) { ok = false; break; }
+      total += v;
+    }
+    check(name + ": all pieces closed & positive", ok, r.solids.length + " pieces");
+    return total;
+  }
+  const seg = { og: 24 };
+  const vFull = auditPieces("2x2 Full", boardParams(), seg);
+  auditPieces("2x2 Lite", boardParams({ ogType: "lite" }), seg);
+  auditPieces("1x1 Full", boardParams({ ogW: 1, ogH: 1, ogScrews: false, ogConnectors: false }), seg);
+  auditPieces("3x2 Full no screws", boardParams({ ogW: 3, ogH: 2, ogScrews: false }), seg);
+  auditPieces("2x2 Full cs+back", boardParams({ ogCs: true, ogScrewInset: 1, ogBackside: true, ogBackInset: 1, ogBackCs: true }), seg);
+
+  // analytic cross-checks against the rib profile
+  const T = 6.8, prof = G.ogRibProfile(T, 28);
+  let area = 0;
+  for (let i = 0; i < prof.length; i++) {
+    const P = prof[i], Q = prof[(i + 1) % prof.length];
+    area += P[0] * Q[1] - Q[0] * P[1];
+  }
+  area = Math.abs(area) / 2;
+  check("rib strip volume = profile area x 28", Math.abs(area * 28 - 222.32) < 0.02, (area * 28).toFixed(2));
+
+  // screw bore must remove material from the node diamond (z-lofted blob)
+  function centerPiece(r) {
+    return r.solids.find(s => {
+      const q = s.pos;
+      let ok = true;
+      for (let i = 0; i < q.length && ok; i += 3)
+        if (Math.abs(q[i]) > 8.01 || Math.abs(q[i + 1]) > 8.01) ok = false;
+      return ok;
+    });
+  }
+  const pPlain = boardParams({ ogScrews: false });
+  const rPlain = G.ogEmitLevel(pPlain, G.deriveBoard(pPlain), seg);
+  const diaPlain = centerPiece(rPlain);
+  const pScr = boardParams();
+  const rScr = G.ogEmitLevel(pScr, G.deriveBoard(pScr), seg);
+  const diaScr = centerPiece(rScr);
+  check("node diamond plain volume ~763.9", diaPlain && Math.abs(volume(diaPlain) - 763.9) < 0.5, volume(diaPlain).toFixed(2));
+  check("screw bore removes material", volume(diaScr) < volume(diaPlain) - 80, volume(diaScr).toFixed(2));
+  check("screw piece watertight", watertight(diaScr));
+
+  // flip stacking: levels alternate upside down, gap preserved
+  const p1 = boardParams({ ogStack: false });
+  const b1 = G.boardSteps(p1, seg);
+  let s1; do { s1 = b1.next(); } while (!s1.done);
+  const m1 = s1.value.mesh, d1 = s1.value.derived;
+  const p2 = boardParams({ ogStack: true, ogStackN: 2, ogStackGap: 0.2 });
+  const b2 = G.boardSteps(p2, seg);
+  let s2; do { s2 = b2.next(); } while (!s2.done);
+  const m2 = s2.value.mesh, d2 = s2.value.derived;
+  const bb2 = bbox(m2);
+  check("board stack: 2 levels, height = 2T + 0.2", d2.levels === 2 && Math.abs(bb2.hi[2] - (2 * 6.8 + 0.2)) < 1e-6, bb2.hi[2].toFixed(3));
+  check("board stack: volume = 2 x single", Math.abs(volume(m2) - 2 * volume(m1)) < 1e-6 * volume(m2));
+  check("board stack: flip keeps footprint", Math.abs(bb2.lo[0] + 28) < 1e-6 && Math.abs(bb2.hi[0] - 28) < 1e-6 && Math.abs(bb2.lo[1] + 28) < 1e-6 && Math.abs(bb2.hi[1] - 28) < 1e-6);
 }
 
 console.log("regression:");

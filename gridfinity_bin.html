@@ -177,6 +177,7 @@ canvas.dragging { cursor:grabbing; }
       <div class="modes">
         <label id="lbl_mode_bin" class="active"><input type="radio" name="mode" id="mode_bin" value="bin" checked> <span data-i="m_bin">Bin</span></label>
         <label id="lbl_mode_plate"><input type="radio" name="mode" id="mode_plate" value="plate"> <span data-i="m_plate">Baseplate</span></label>
+        <label id="lbl_mode_og"><input type="radio" name="mode" id="mode_og" value="og"> <span data-i="m_og">openGrid Board</span></label>
       </div>
     </section>
 
@@ -278,6 +279,58 @@ canvas.dragging { cursor:grabbing; }
           <input type="number" id="plateStackGap" min="0" max="5" step="0.05" value="0.2">
         </div>
         <div style="font-size:11px; color:var(--muted); margin-bottom:4px" data-i="stacking_hint">Every second copy is rotated 180° so the seams do not line up.</div>
+      </div>
+    </section>
+
+    <section id="ogOpts" hidden>
+      <h2 data-i="h_ogboard">openGrid Board</h2>
+      <div class="row">
+        <label for="ogW" data-i="l_width">Width</label>
+        <input type="range" id="ogW" min="1" max="20" step="1" value="4">
+        <input type="number" id="ogW_num" min="1" max="20" step="1" value="4">
+      </div>
+      <div class="row">
+        <label for="ogH" data-i="l_depth">Depth</label>
+        <input type="range" id="ogH" min="1" max="20" step="1" value="3">
+        <input type="number" id="ogH_num" min="1" max="20" step="1" value="3">
+      </div>
+      <div class="modes submodes">
+        <label id="lbl_og_full" class="active"><input type="radio" name="og_type" id="og_type_full" value="full" checked> <span data-i="og_full">Full (6.8 mm)</span></label>
+        <label id="lbl_og_lite"><input type="radio" name="og_type" id="og_type_lite" value="lite"> <span data-i="og_lite">Lite (4 mm)</span></label>
+      </div>
+
+      <h2 style="margin-top:16px" data-i="og_features">Board Features</h2>
+      <label class="check"><input type="checkbox" id="ogScrews" checked> <span data-i="og_screws">Screw holes</span></label>
+      <div id="ogScrewOpts" style="margin-left:24px; margin-top:2px; margin-bottom:8px">
+        <div class="num"><label for="ogScrewD" data-i="og_shaft">Shaft &oslash; (mm)</label><input type="number" id="ogScrewD" min="2" max="8" step="0.1" value="4.1"></div>
+        <div class="num"><label for="ogScrewHeadD" data-i="og_head">Head &oslash; (mm)</label><input type="number" id="ogScrewHeadD" min="3" max="10" step="0.1" value="7.2"></div>
+        <div class="num"><label for="ogScrewInset" data-i="og_inset">Head inset from top (mm)</label><input type="number" id="ogScrewInset" min="0" max="4" step="0.1" value="1"></div>
+        <label class="check"><input type="checkbox" id="ogCs"> <span data-i="og_cs">Countersink</span></label>
+        <div class="num" id="ogCsDegRow" hidden><label for="ogCsDeg" data-i="og_cs_deg">Countersink angle (&deg;)</label><input type="number" id="ogCsDeg" min="60" max="120" step="5" value="90"></div>
+        <label class="check"><input type="checkbox" id="ogBackside"> <span data-i="og_back">Backside head pocket</span></label>
+        <div id="ogBackOpts" hidden style="margin-left:24px; margin-top:2px; margin-bottom:4px">
+          <div class="num"><label for="ogBackInset" data-i="og_back_inset">Pocket depth (mm)</label><input type="number" id="ogBackInset" min="0" max="4" step="0.1" value="1"></div>
+          <div class="num"><label for="ogBackShrink" data-i="og_back_shrink">Pocket shrink (mm)</label><input type="number" id="ogBackShrink" min="0" max="3" step="0.1" value="0"></div>
+          <label class="check"><input type="checkbox" id="ogBackCs"> <span data-i="og_back_cs">Pocket countersink</span></label>
+          <div class="num" id="ogBackCsDegRow" hidden><label for="ogBackCsDeg" data-i="og_back_cs_deg">Pocket angle (&deg;)</label><input type="number" id="ogBackCsDeg" min="60" max="120" step="5" value="90"></div>
+        </div>
+      </div>
+      <label class="check"><input type="checkbox" id="ogConnectors" checked> <span data-i="og_conn">Board-to-board connectors</span></label>
+      <div style="font-size:11px; color:var(--muted); margin-top:6px" data-i="og_hint">28 mm openGrid lattice; 3 OG tiles = 2 Gridfinity units. Heads wider than 7.7 mm are clamped to fit the node.</div>
+
+      <h2 style="margin-top:16px" data-i="stacking_h">Stacking copies</h2>
+      <label class="check"><input type="checkbox" id="ogStack"> <span data-i="stacking_on">Stack copies upward</span></label>
+      <div id="ogStackOpts" hidden style="margin-left:24px; margin-top:2px; margin-bottom:8px">
+        <div class="row">
+          <label for="ogStackN" data-i="stacking_copies">Copies</label>
+          <input type="range" id="ogStackN" min="2" max="10" step="1" value="2">
+          <input type="number" id="ogStackN_num" min="2" max="10" step="1" value="2">
+        </div>
+        <div class="num">
+          <label for="ogStackGap" data-i="stacking_gap">Gap between copies (mm)</label>
+          <input type="number" id="ogStackGap" min="0" max="5" step="0.05" value="0.2">
+        </div>
+        <div style="font-size:11px; color:var(--muted); margin-bottom:4px" data-i="stacking_hint">Every second copy is laid upside down (sockets facing down); the air gap keeps the copies from fusing.</div>
       </div>
     </section>
 
@@ -700,13 +753,25 @@ function earClip(poly) {
       if (ar <= 1e-10) continue;
       var ok = true;
       if (relax === 0) {
+        var ab = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        var bc = Math.hypot(c[0] - b[0], c[1] - b[1]);
+        var ca = Math.hypot(a[0] - c[0], a[1] - c[1]);
         for (var j = 0; j < m; j++) {
           var t = idx[j];
           if (t === i0 || t === i1 || t === i2) continue;
           var q = poly[t];
           // a duplicated bridge vertex sits exactly on a corner: not a blocker
           if (samePt(q, a) || samePt(q, b) || samePt(q, c)) continue;
-          if (inTriangle(q, a, b, c)) { ok = false; break; }
+          var d1 = area2(a, b, q), d2 = area2(b, c, q), d3 = area2(c, a, q);
+          if (d1 >= -1e-12 && d2 >= -1e-12 && d3 >= -1e-12) {
+            // a point lying ON an ear edge does not block the ear
+            var h = Math.min(Math.abs(d1) / (ab || 1),
+                             Math.abs(d2) / (bc || 1),
+                             Math.abs(d3) / (ca || 1));
+            if (h < 1e-7) continue;
+            ok = false;
+            break;
+          }
         }
       }
       if (!ok) continue;
@@ -805,6 +870,208 @@ function addCap(mesh, outer, holes, z, up) {
     if (up) mesh.tri(A, B, C, nv, nv, nv);
     else mesh.tri(A, C, B, nv, nv, nv);
   }
+}
+
+/* ---- cut a closed mesh with the plane z = z0, keep the part above and
+   cap the opening flat. Collinear boundary points are merged away on
+   BOTH the wall side (two triangles become one) and the cap loop, so
+   cap triangulation always matches the wall segmentation. */
+function clipMeshAbove(srcM, z0) {
+  var out = new Mesh();
+  var segs = [];                                 // boundary chords at z0
+  var chordOwner = [];                           // tri offset per chord
+  function lerpN(i0, i1, t) {
+    var a = [srcM.nrm[i0], srcM.nrm[i0 + 1], srcM.nrm[i0 + 2]];
+    var b = [srcM.nrm[i1], srcM.nrm[i1 + 1], srcM.nrm[i1 + 2]];
+    return norm3([a[0] + (b[0] - a[0]) * t,
+                  a[1] + (b[1] - a[1]) * t,
+                  a[2] + (b[2] - a[2]) * t]);
+  }
+  for (var i = 0; i < srcM.pos.length; i += 9) {
+    var V = [], N = [];
+    for (var v = 0; v < 3; v++) {
+      V.push([srcM.pos[i + v * 3], srcM.pos[i + v * 3 + 1], srcM.pos[i + v * 3 + 2]]);
+      N.push([srcM.nrm[i + v * 3], srcM.nrm[i + v * 3 + 1], srcM.nrm[i + v * 3 + 2]]);
+    }
+    var above = [V[0][2] >= z0 - 1e-9, V[1][2] >= z0 - 1e-9, V[2][2] >= z0 - 1e-9];
+    var na = above[0] + above[1] + above[2];
+    if (na === 3) {
+      out.tri(V[0], V[1], V[2], N[0], N[1], N[2]);
+      continue;
+    }
+    if (na === 0) continue;
+    var P = [], NN = [], cross = [];
+    for (var e = 0; e < 3; e++) {
+      var A = V[e], B = V[(e + 1) % 3];
+      var inA = above[e], inB = above[(e + 1) % 3];
+      if (inA) { P.push(A); NN.push(N[e]); }
+      if (inA !== inB) {
+        var t = (z0 - A[2]) / (B[2] - A[2]);
+        var X = [A[0] + (B[0] - A[0]) * t,
+                 A[1] + (B[1] - A[1]) * t, z0];
+        P.push(X);
+        NN.push(lerpN(i + e * 3, i + ((e + 1) % 3) * 3, t));
+        cross.push(X);
+      }
+    }
+    var base = out.pos.length / 9;
+    for (var k = 1; k + 1 < P.length; k++)
+      out.tri(P[0], P[k], P[k + 1], NN[0], NN[k], NN[k + 1]);
+    if (cross.length === 2) {
+      segs.push(cross[0], cross[1]);
+      for (var f2 = base; f2 < out.pos.length / 9; f2++) {
+        var has0 = false, has1 = false;
+        for (var f3 = 0; f3 < 3; f3++) {
+          var fpt = [out.pos[f2 * 9 + f3 * 3], out.pos[f2 * 9 + f3 * 3 + 1],
+                     out.pos[f2 * 9 + f3 * 3 + 2]];
+          if (samePt(fpt, cross[0])) has0 = true;
+          if (samePt(fpt, cross[1])) has1 = true;
+        }
+        if (has0 && has1) { chordOwner.push(f2 * 9); break; }
+      }
+    }
+  }
+  /* merge collinear boundary points on the wall side: the fan of
+     triangles around the point collapses onto the straight chord
+     (P0 -> P2), which the cap then shares */
+  function kOf(p) {
+    return p[0].toFixed(4) + "," + p[1].toFixed(4) + "," + p[2].toFixed(4);
+  }
+  var ptChords = new Map();
+  for (var c1 = 0; c1 * 2 < segs.length; c1++) {
+    for (var e2 = 0; e2 < 2; e2++) {
+      var kp2 = kOf(segs[c1 * 2 + e2]);
+      if (!ptChords.has(kp2)) ptChords.set(kp2, []);
+      ptChords.get(kp2).push(c1);
+    }
+  }
+  var chordDropped = new Set(), newChords = [];
+  for (var c2 = 0; c2 * 2 < segs.length; c2++) {
+    if (chordDropped.has(c2)) continue;
+    for (var e3 = 0; e3 < 2; e3++) {
+      var P1 = segs[c2 * 2 + e3];
+      var cs = ptChords.get(kOf(P1)) || [];
+      if (cs.length !== 2 || chordDropped.has(cs[0]) || chordDropped.has(cs[1]))
+        continue;
+      var oA = chordOwner[cs[0]], oB = chordOwner[cs[1]];
+      /* all tris incident to P1 */
+      var inc = [];
+      for (var t3 = 0; t3 + 8 < out.pos.length; t3 += 9) {
+        for (var v3 = 0; v3 < 3; v3++)
+          if (samePt([out.pos[t3 + v3 * 3], out.pos[t3 + v3 * 3 + 1],
+                      out.pos[t3 + v3 * 3 + 2]], P1)) { inc.push(t3); break; }
+      }
+      var oAi = inc.indexOf(oA), oBi = inc.indexOf(oB);
+      if (oAi < 0 || oBi < 0) continue;
+      /* ring of opposite vertices, in fan order */
+      var ring = [];
+      for (var r1 = 0; r1 < inc.length; r1++) {
+        for (var v4 = 0; v4 < 3; v4++) {
+          var q4 = [out.pos[inc[r1] + v4 * 3], out.pos[inc[r1] + v4 * 3 + 1],
+                    out.pos[inc[r1] + v4 * 3 + 2]];
+          if (samePt(q4, P1)) continue;
+          var dup = false;
+          for (var r2 = 0; r2 < ring.length; r2++)
+            if (samePt(q4, ring[r2]) &&
+                Math.abs(q4[2] - ring[r2][2]) < 1e-9) { dup = true; break; }
+          if (!dup) ring.push(q4);
+        }
+      }
+      if (ring.length !== inc.length + 1) continue;   // not a clean fan
+      /* plane normal from the ring (Newell), oriented outward */
+      var Nn = [0, 0, 0];
+      for (var r3 = 0; r3 < ring.length; r3++) {
+        var qa = ring[r3], qb = ring[(r3 + 1) % ring.length];
+        Nn[0] += (qa[1] - qb[1]) * (qa[2] + qb[2]);
+        Nn[1] += (qa[2] - qb[2]) * (qa[0] + qb[0]);
+        Nn[2] += (qa[0] - qb[0]) * (qa[1] + qb[1]);
+      }
+      var nl = Math.hypot(Nn[0], Nn[1], Nn[2]) || 1;
+      Nn = [Nn[0] / nl, Nn[1] / nl, Nn[2] / nl];
+      var tn = [out.nrm[oA], out.nrm[oA + 1], out.nrm[oA + 2]];
+      if (Nn[0] * tn[0] + Nn[1] * tn[1] + Nn[2] * tn[2] < 0)
+        Nn = [-Nn[0], -Nn[1], -Nn[2]];
+      /* order ring around P1 */
+      var u0 = [ring[0][0] - P1[0], ring[0][1] - P1[1], ring[0][2] - P1[2]];
+      var ul = Math.hypot(u0[0], u0[1], u0[2]) || 1;
+      u0 = [u0[0] / ul, u0[1] / ul, u0[2] / ul];
+      var w0 = [Nn[1] * u0[2] - Nn[2] * u0[1],
+                Nn[2] * u0[0] - Nn[0] * u0[2],
+                Nn[0] * u0[1] - Nn[1] * u0[0]];
+      ring.sort(function (ra, rb) {
+        function ang(rc) {
+          var d = [rc[0] - P1[0], rc[1] - P1[1], rc[2] - P1[2]];
+          return Math.atan2(d[0] * w0[0] + d[1] * w0[1] + d[2] * w0[2],
+                            d[0] * u0[0] + d[1] * u0[1] + d[2] * u0[2]);
+        }
+        return ang(ra) - ang(rb);
+      });
+      /* P0 and P2 must be the ring neighbours of the cut */
+      var oApt = segs[cs[0] * 2], oApt2 = segs[cs[0] * 2 + 1];
+      var P0 = samePt(oApt, P1) ? oApt2 : oApt;
+      var oBpt = segs[cs[1] * 2], oBpt2 = segs[cs[1] * 2 + 1];
+      var P2 = samePt(oBpt, P1) ? oBpt2 : oBpt;
+      var iP0 = -1, iP2 = -1;
+      for (var r4 = 0; r4 < ring.length; r4++) {
+        if (samePt(ring[r4], P0)) iP0 = r4;
+        if (samePt(ring[r4], P2)) iP2 = r4;
+      }
+      if (iP0 < 0 || iP2 < 0) continue;
+      /* rebuild the fan without P1 */
+      var keep = new Mesh();
+      for (var t4 = 0; t4 + 8 < out.pos.length; t4 += 9) {
+        if (inc.indexOf(t4) >= 0) continue;
+        for (var c4 = 0; c4 < 9; c4++) keep.pos.push(out.pos[t4 + c4]);
+        for (var c5 = 0; c5 < 9; c5++) keep.nrm.push(out.nrm[t4 + c5]);
+      }
+      for (var f4 = 1; f4 + 1 < ring.length; f4++)
+        keep.tri(ring[0], ring[f4], ring[f4 + 1], Nn, Nn, Nn);
+      out = keep;
+      chordDropped.add(cs[0]);
+      chordDropped.add(cs[1]);
+      newChords.push([P0, P2]);
+      break;                    // segs indices changed only logically
+    }
+  }
+  /* cap: chain the boundary chords into loop(s), skipping collinear pts */
+  var nbrs = new Map();
+  var live = [];
+  for (var s3 = 0; s3 * 2 < segs.length; s3++)
+    if (!chordDropped.has(s3)) live.push([segs[s3 * 2], segs[s3 * 2 + 1]]);
+  for (var s5 = 0; s5 < newChords.length; s5++) live.push(newChords[s5]);
+  for (var s6 = 0; s6 < live.length; s6++) {
+    var pa = live[s6][0], pb = live[s6][1];
+    if (!nbrs.has(kOf(pa))) nbrs.set(kOf(pa), []);
+    if (!nbrs.has(kOf(pb))) nbrs.set(kOf(pb), []);
+    nbrs.get(kOf(pa)).push(pb);
+    nbrs.get(kOf(pb)).push(pa);
+  }
+  var used2 = new Map();
+  var loops = [];
+  for (var s4 = 0; s4 < live.length; s4++) {
+    var start = live[s4][0];
+    if (used2.has(kOf(start))) continue;
+    var loop = [start];
+    used2.set(kOf(start), 1);
+    var cur = start;
+    for (;;) {
+      var cand2 = nbrs.get(kOf(cur)) || [];
+      var nxtPt = null;
+      for (var ci = 0; ci < cand2.length; ci++)
+        if (!used2.has(kOf(cand2[ci]))) { nxtPt = cand2[ci]; break; }
+      if (!nxtPt || kOf(nxtPt) === kOf(start)) break;
+      loop.push(nxtPt);
+      used2.set(kOf(nxtPt), 1);
+      cur = nxtPt;
+    }
+    if (loop.length >= 3) loops.push(loop);
+  }
+  for (var L = 0; L < loops.length; L++) {
+    var flat = loops[L].map(function (p) { return [p[0], p[1]]; });
+    if (signedArea(flat) < 0) flat.reverse();
+    addCap(out, flat, [], z0, false);
+  }
+  return out;
 }
 
 /* ---- closed solid from a stack of levels ----
@@ -1418,6 +1685,551 @@ function* plateSteps(p, seg) {
 }
 
 /* =====================================================================
+   openGrid board -- port of the openGrid Studio board geometry
+   (https://github.com/ClassicOldSong/openGrid-Studio, Apache-2.0;
+   openGrid standard CC-BY 4.0 by David D).  A 28 mm lattice of snap
+   openings with a capture waist in the rib profile.  Full is 6.8 mm
+   thick, Lite 4 mm.  Screw holes sit on interior lattice nodes,
+   board-to-board connector cutouts on the border nodes, and the four
+   outer corners get a 4.2 mm chamfer.
+   ===================================================================== */
+var OG = {
+  TILE: 28,
+  OUT: 0.8,            // rib material next to an opening
+  TOP_CH: 0.4,         // opening lead-in chamfer, top and bottom
+  MID_CH: 1,           // 45 deg run into the capture waist
+  CAPTURE: 2.4,        // z of the waist shoulder
+  CORNER_SQ: 2.6,
+  INTERSECT: 4.2,
+  INNER_DIFF: 3,
+  FULL_T: 6.8,
+  LITE_T: 4,
+  CONN_R: 2.6, CONN_SEP: 2.5, CONN_H: 2.4,
+  CONN_STEM: 0.25, CONN_SH: 0.5, CONN_BLEND: Math.sqrt(125 / 16),
+  LITE_CONN_FROM_TOP: 1
+};
+
+function ogRibInset(tile) {
+  return (tile - (tile - OG.INNER_DIFF)) / 2 - OG.OUT;    // 0.7 at 28 mm
+}
+
+/* Rib cross-section between two openings, CCW in (inset from opening, z).
+   The capture waist spans [lo, hi]; for the 4 mm Lite board the original
+   polygon would self-intersect, so the band is centred on mid-thickness. */
+function ogRibProfile(T, tile) {
+  var e1 = OG.OUT, e2 = OG.OUT + ogRibInset(tile);
+  var hi = Math.max(OG.CAPTURE, T - OG.CAPTURE);
+  var lo = Math.min(OG.CAPTURE, T - OG.CAPTURE);
+  return [
+    [0, 0], [e2 - OG.TOP_CH, 0], [e2, OG.TOP_CH], [e2, lo - OG.MID_CH],
+    [e1, lo], [e1, hi], [e2, hi + OG.MID_CH],
+    [e2, T - OG.TOP_CH], [e2 - OG.TOP_CH, T], [0, T]
+  ];
+}
+
+/* Tile corner block: the profile prism clipped to its own tile, so the
+   section at height z is the triangle {0 <= u <= U(z), |w| <= u}. */
+function ogCornerProfile(T) {
+  var c = Math.sqrt(OG.INTERSECT * OG.INTERSECT / 2) + OG.CORNER_SQ;
+  var ch = OG.CAPTURE - OG.MID_CH;
+  return { c: c, ch: ch };
+}
+
+/* ---- one board level as separate closed pieces (no booleans) ----
+   Exact partition of the openGrid-Studio union:
+     union(profiled tile strips, node-fill diamonds, corner wedges) - cuts.
+   Their corner wedge is a centered extrusion, so each tile corner owns
+   the quadrant triangle {dx+dy <= B(z)} with B(z) = sqrt2*(co-cc+min(z,
+   T-z, cc)): 5.897 at the faces, 7.877 in the middle.  The node blob is
+   therefore just a z-lofted diamond (full at fill nodes, half at edge
+   nodes, quarter + chamfer ring at outer corners); the 5.57 node fill
+   is strictly inside it.  Strips and border ribs end on the shared
+   plane {a+s = B(z)}, so the surfaces abut exactly.  Connector nodes
+   cut the half diamond with the true outline over the pocket z-band. */
+function ogEmitLevel(p, d, seg) {
+  var solids = [];
+  var W = d.W, H = d.H, T = d.T, lite = !!d.lite;
+  /* ogstudio lite: the TOP 4 mm of the full board (z 2.8..6.8) shifted
+     down -- the profile is clipped to the band and dropped to z = 0 */
+  var zShift = lite ? OG.FULL_T - T : 0;
+  var prof = ogRibProfile(OG.FULL_T, OG.TILE);
+  if (lite) {
+    prof = ogClipPolyZ(prof, zShift, OG.FULL_T);
+    prof = prof.map(function (q) { return [q[0], q[1] - zShift]; });
+  }
+  var co = Math.sqrt(OG.INTERSECT * OG.INTERSECT / 2) + OG.CORNER_SQ;
+  var cc = OG.CAPTURE - OG.MID_CH;
+  var ID = OG.INTERSECT;                          // corner chamfer plane |x|+|y| = 4.2
+  var segHole = Math.max(16, (seg && seg.hole ? seg.hole : 14) * 2);
+  var ZS = [];                                    // profile z-levels for lofts
+  for (var i = 0; i < prof.length; i++)
+    if (ZS.indexOf(prof[i][1]) < 0) ZS.push(prof[i][1]);
+  ZS.sort(function (a, b) { return a - b; });
+  function fAt(z) { return ogSpanAt(prof, z)[1]; }
+  function BAt(z) {                               // quadrant-triangle leg sum
+    var zf = lite ? z + zShift : z;               // full-board z frame
+    return Math.SQRT2 * (co - cc +
+      Math.min(Math.min(zf, OG.FULL_T - zf), cc));
+  }
+
+  function piece(emit) {
+    var s = new Mesh();
+    emit(s);
+    solids.push(s);
+  }
+  function loopAt(c, ex, ey, poly, z) {           // local (a,s) -> world xy
+    return poly.map(function (t) {
+      return [c[0] + ex[0] * t[0] + ey[0] * t[1],
+              c[1] + ex[1] * t[0] + ey[1] * t[1], z];
+    });
+  }
+
+  /* ---- strips along interior lattice lines ----
+     Ends ride the node diamond plane {a+s = B(z)} (every node kind). */
+  function stripSeg(P, Ex, Ey) {
+    var lv = [];
+    for (var k = 0; k < ZS.length; k++) {
+      var z = ZS[k], f = fAt(z), b = BAt(z);
+      var q = [[b, 0], [OG.TILE - b, 0], [OG.TILE - b + f, f], [b - f, f]];
+      if (Ex[0] * Ey[1] - Ex[1] * Ey[0] < 0) q.reverse();   // keep CCW
+      lv.push({ loop: loopAt(P, Ex, Ey, q, z), z: z });
+    }
+    piece(function (s) { addSolid(s, lv, [], []); });
+  }
+  for (var j = 1; j < H; j++) for (var cx2 = 0; cx2 < W; cx2++) {
+    var P0 = [(cx2 - W / 2) * OG.TILE, (H / 2 - j) * OG.TILE];
+    stripSeg(P0, [1, 0], [0, 1]);                  // into the tile above
+    stripSeg(P0, [1, 0], [0, -1]);                 // into the tile below
+  }
+  for (var i2 = 1; i2 < W; i2++) for (var cy2 = 0; cy2 < H; cy2++) {
+    var P1 = [(i2 - W / 2) * OG.TILE, (H / 2 - cy2) * OG.TILE];
+    stripSeg(P1, [0, -1], [1, 0]);                 // into the tile right
+    stripSeg(P1, [0, -1], [-1, 0]);                // into the tile left
+  }
+
+  /* ---- border ribs: lofts ending on the node diamond planes ---- */
+  function borderEdge(O, A, Sd, len) {          // A x Sd = +z; a runs 0..len
+    var zs = ZS;
+    function ribPiece(l0, l1) {                 // a = l(z,s) boundaries
+      var lv = [];
+      for (var k = 0; k < zs.length; k++) {
+        var z = zs[k], f = fAt(z);
+        var a00 = l0(k, 0), a0f = l0(k, f), a10 = l1(k, 0), a1f = l1(k, f);
+        var q = [[a00, 0], [a10, 0], [a1f, f], [a0f, f]];
+        if (A[0] * Sd[1] - A[1] * Sd[0] < 0) q.reverse();
+        lv.push({ loop: loopAt(O, A, Sd, q, z), z: z });
+      }
+      piece(function (s) { addSolid(s, lv, [], []); });
+    }
+    function plus(v) { return function (k, s) { return v + (BAt(zs[k]) - s); }; }
+    function minus(v) { return function (k, s) { return v - (BAt(zs[k]) - s); }; }
+    var cuts = [plus(0)];
+    for (var nn = 1; nn < len / OG.TILE; nn++)
+      cuts.push(minus(nn * OG.TILE), plus(nn * OG.TILE));
+    cuts.push(minus(len));
+    for (var ci = 0; ci + 1 < cuts.length; ci += 2) ribPiece(cuts[ci], cuts[ci + 1]);
+  }
+  var OX2 = d.OX / 2, OY2 = d.OY / 2;
+  borderEdge([-OX2, -OY2], [1, 0], [0, 1], d.OX);        // south
+  borderEdge([OX2, OY2], [-1, 0], [0, -1], d.OX);        // north
+  borderEdge([-OX2, OY2], [0, -1], [1, 0], d.OY);        // west
+  borderEdge([OX2, -OY2], [0, 1], [-1, 0], d.OY);        // east
+
+  /* ---- node blobs: z-lofted diamonds ---- */
+  /* connector pocket band: full T/2 +-1.2; lite keeps the upper part
+     (original 4.6..6.8 minus the band shift) -- open through the top */
+  var cz = lite ? (OG.FULL_T - OG.CONN_H / 2 - OG.LITE_CONN_FROM_TOP) - zShift
+                : T / 2 - OG.CONN_H / 2;
+  /* right-half outline (along, perp) from ogConnectorLoop; mirror it
+     into the full upper chain running left -> right along the border */
+  var cl = ogConnectorLoop((seg && seg.og) || 128), up = [];
+  for (var pi = 0; pi < cl.length; pi++)
+    if (cl[pi][1] >= -1e-6) up.push([cl[pi][0], Math.max(0, cl[pi][1])]);
+  if (up.length > 1 && up[0][0] > up[up.length - 1][0]) up.reverse();
+  /* full arc left -> right: up runs apex -> (+reach, 0), so the
+     mirrored half (reversed) climbs (-reach, 0) -> apex and the rest
+     descends to (+reach, 0); the apex appears exactly once */
+  var notch = up.map(function (q4) { return [-q4[0], q4[1]]; })
+    .reverse().concat(up.slice(1));
+  /* fixed high-res arc for resampling (independent of seg.og) */
+  var clHi = ogConnectorLoop(64), upHi = [];
+  for (var ph = 0; ph < clHi.length; ph++)
+    if (clHi[ph][1] >= -1e-6) upHi.push([clHi[ph][0], Math.max(0, clHi[ph][1])]);
+  if (upHi.length > 1 && upHi[0][0] > upHi[upHi.length - 1][0]) upHi.reverse();
+  var notchHi = upHi.map(function (q4) { return [-q4[0], q4[1]]; })
+    .reverse().concat(upHi.slice(1));
+  function halfDia(c, inw) {   // inward unit (inw); perp = ccw90(inw)
+    var pp = [-inw[1], inw[0]];
+    var reach = 0;
+    for (var wi = 0; wi < notch.length; wi++)
+      reach = Math.max(reach, Math.abs(notch[wi][0]));
+    function arcY(x) {
+      var j = 0;
+      while (j < notchHi.length - 2 && notchHi[j + 1][0] < x) j++;
+      var P = notchHi[j], Q = notchHi[j + 1];
+      var t = Math.abs(Q[0] - P[0]) < 1e-12 ? 0 : (x - P[0]) / (Q[0] - P[0]);
+      return Math.max(0, P[1] + (Q[1] - P[1]) * t);
+    }
+    function loop(z, withNotch, resample) {
+      var b = BAt(z);
+      var pts;
+      if (!withNotch || b < 1e-9) {
+        pts = [[-b, 0], [b, 0], [0, b]];
+      } else if (!resample) {
+        pts = [[-b, 0]].concat(notch).concat([[b, 0], [0, b]]);
+      } else {
+        /* narrow faces: follow the arc but keep every point strictly
+           inside the wedge, so the loop stays simple and triangulates */
+        var mouth = Math.min(reach, b - 0.8);
+        var NS = 24;
+        var rs = [];
+        for (var k2 = 0; k2 < NS; k2++) {
+          var x2 = -mouth + 2 * mouth * k2 / (NS - 1);
+          var y2 = arcY(x2);
+          var lim = b - Math.abs(x2) - 0.02 -
+            0.004 * (0.5 + 0.5 * Math.sin(k2 * 2.399));   // wobble kills
+                                                          // collinear runs
+          if (y2 > lim) y2 = lim;
+          rs.push([x2, Math.max(0, y2)]);
+        }
+        pts = [[-b, 0]].concat(rs).concat([[b, 0], [0, b]]);
+      }
+      var out = pts.map(function (t) {
+        return [c[0] + pp[0] * t[0] + inw[0] * t[1],
+                c[1] + pp[1] * t[0] + inw[1] * t[1], z];
+      });
+      if (signedArea(out.map(function (w) { return [w[0], w[1]]; })) < 0)
+        out.reverse();
+      return out;
+    }
+    return loop;
+  }
+  function diamondLoop(c, z) {
+    var b = BAt(z);
+    return [[c[0] + b, c[1]], [c[0], c[1] + b], [c[0] - b, c[1]], [c[0], c[1] - b]];
+  }
+  for (var iy3 = 0; iy3 <= H; iy3++) for (var ix3 = 0; ix3 <= W; ix3++) {
+    var info = ogNodeInfo(W, H, ix3, iy3);
+    if (!info) continue;
+    var nx = (ix3 - W / 2) * OG.TILE, ny = (H / 2 - iy3) * OG.TILE;
+    var inw = info.kind === "edge"
+      ? (ix3 === 0 ? [1, 0] : ix3 === W ? [-1, 0] : iy3 === 0 ? [0, -1] : [0, 1])
+      : [(ix3 === 0 ? 1 : -1), (iy3 === 0 ? -1 : 1)];
+    if (info.kind === "fill") {
+      (function (nx, ny) {
+        piece(function (s) { ogFillDiamond(s, nx, ny, T, p, segHole, lite, ZS, BAt); });
+      })(nx, ny);
+    } else if (info.kind === "outer") {         // quarter: {ID <= |x|+|y| <= B}
+      var lvq = [];
+      for (var k8 = 0; k8 < ZS.length; k8++) {
+        var zq = ZS[k8], bq = BAt(zq);
+        var q = [[ID, 0], [bq, 0], [bq / 2, bq / 2], [0, bq],
+                 [0, ID], [ID / 2, ID / 2]];
+        var pts2 = q.map(function (t) {
+          return [nx + inw[0] * t[0], ny + inw[1] * t[1], zq];
+        });
+        if (signedArea(pts2.map(function (w) { return [w[0], w[1]]; })) < 0)
+          pts2.reverse();
+        lvq.push({ loop: pts2, z: zq });
+      }
+      piece(function (s) { addSolid(s, lvq, [], []); });
+    } else {                                    // edge node: half diamond
+      var isConn = !!p.ogConnectors;
+      var mk = halfDia([nx, ny], inw);
+      if (!isConn) {
+        var lv = [];
+        for (var k5 = 0; k5 < ZS.length; k5++)
+          lv.push({ loop: mk(ZS[k5], false), z: ZS[k5] });
+        piece(function (s) { addSolid(s, lv, [], []); });
+      } else {
+        var z1 = Math.max(0, cz), z2 = Math.min(T, cz + OG.CONN_H);
+        if (z1 > 1e-9) {
+          var lb = [];
+          for (var k6 = 0; k6 < ZS.length && ZS[k6] <= z1 + 1e-9; k6++)
+            lb.push({ loop: mk(ZS[k6], false), z: ZS[k6] });
+          if (lb.length && lb[lb.length - 1].z < z1 - 1e-9)
+            lb.push({ loop: mk(z1, false), z: z1 });
+          piece(function (s) { addSolid(s, lb, [], []); });
+        }
+        var resN = lite;      // narrow top face: resampled notch loops
+        piece(function (s) {
+          addSolid(s, [{ loop: mk(z1, true, resN), z: z1 },
+                       { loop: mk(z2, true, resN), z: z2 }], [], []);
+        });
+        if (z2 < T - 1e-9) {
+          var lt = [];
+          for (var k7 = 0; k7 < ZS.length; k7++)
+            if (ZS[k7] >= z2 - 1e-9) lt.push({ loop: mk(ZS[k7], false), z: ZS[k7] });
+          if (lt.length && lt[0].z > z2 + 1e-9)
+            lt.unshift({ loop: mk(z2, false), z: z2 });
+          piece(function (s) { addSolid(s, lt, [], []); });
+        }
+      }
+    }
+  }
+  return { solids: solids, voids: [] };
+}
+
+/* Clip a polygon (CCW, in (inset, z)) to a horizontal band -- plain
+   Sutherland-Hodgman against two lines; the rib profile is simple. */
+function ogClipHalfZ(poly, z, keepAbove) {
+  if (!poly.length) return [];
+  var res = [];
+  for (var i = 0; i < poly.length; i++) {
+    var P = poly[i], Q = poly[(i + 1) % poly.length];
+    var pin = keepAbove ? P[1] >= z : P[1] <= z;
+    var qin = keepAbove ? Q[1] >= z : Q[1] <= z;
+    if (pin) res.push(P);
+    if (pin !== qin) {
+      var t = (z - P[1]) / (Q[1] - P[1]);
+      res.push([P[0] + (Q[0] - P[0]) * t, z]);
+    }
+  }
+  return res;
+}
+function ogClipPolyZ(pts, zlo, zhi) {
+  return ogClipHalfZ(ogClipHalfZ(pts, zlo, true), zhi, false);
+}
+
+/* [minInset, maxInset] of the rib profile at height z (linear interp). */
+function ogSpanAt(prof, z) {
+  var lo = Infinity, hi = -Infinity;
+  for (var i = 0; i < prof.length; i++) {
+    var P = prof[i], Q = prof[(i + 1) % prof.length];
+    if (Math.abs(P[1] - Q[1]) < 1e-9) {
+      if (Math.abs(P[1] - z) < 1e-9) {
+        lo = Math.min(lo, P[0], Q[0]);
+        hi = Math.max(hi, P[0], Q[0]);
+      }
+    } else if ((P[1] <= z && z <= Q[1]) || (Q[1] <= z && z <= P[1])) {
+      var s = P[0] + (Q[0] - P[0]) * (z - P[1]) / (Q[1] - P[1]);
+      lo = Math.min(lo, s);
+      hi = Math.max(hi, s);
+    }
+  }
+  return [lo, hi];
+}
+
+/* Node diamond, optionally carrying the full screw bore as proper hole
+   walls (shaft + front head pocket + countersink + backside pocket),
+   the same way the bin feet pair addSolid cap holes with addHoleWalls. */
+function ogFillDiamond(m, nx, ny, T, p, seg, lite, ZS, BAt) {
+  /* per-level diamond loops: the node blob follows their corner wedges */
+  function dia(z) {
+    var b = BAt(z);
+    return [[nx + b, ny], [nx, ny + b], [nx - b, ny], [nx, ny - b]];
+  }
+  if (!p.ogScrews) {
+    var lv0 = [];
+    for (var i0 = 0; i0 < ZS.length; i0++)
+      lv0.push({ loop: dia(ZS[i0]), z: ZS[i0] });
+    addSolid(m, lv0, [], []);
+    return;
+  }
+  var r = Math.max(0.1, +p.ogScrewD || 4.1) / 2;
+  /* the head pocket must stay inside the smallest diamond (z = 0, T) */
+  var rhMax = (BAt(0) - 0.1) / Math.SQRT2;
+  var rh = Math.min(rhMax, Math.max(2 * r, +p.ogScrewHeadD || 7.2) / 2);
+  var inset = Math.max(0, +p.ogScrewInset || 0);
+  var back = !!p.ogBackside && !lite;   // lite: back pockets live in the
+                                        // trimmed-away band
+  var bi = back ? Math.max(0, +p.ogBackInset || 0) : 0;
+  var rbh = back ? Math.max(r, rh - Math.max(0, +p.ogBackShrink || 0)) : r;
+  var hz0 = T - inset;                         // front head pocket floor
+  var csF = (p.ogCs && inset > 0 && rh > r)
+    ? Math.max(0, Math.tan((180 - (+p.ogCsDeg || 90)) * Math.PI / 360) * (rh - r) - 0.01) : 0;
+  var csB = (back && bi > 0 && p.ogBackCs && rbh > r)
+    ? Math.max(0, Math.tan((180 - (+p.ogBackCsDeg || 90)) * Math.PI / 360) * (rbh - r) - 0.01) : 0;
+  if (csB > 0) csB = Math.min(csB, Math.max(0, hz0 - csF - bi));
+  var circ = circleLoop(nx, ny, r, seg), circH = circleLoop(nx, ny, rh, seg),
+      circB = (back && bi > 0 && rbh > r) ? circleLoop(nx, ny, rbh, seg) : circ;
+
+  /* The bore is one chain of rings bottom -> top; addHoleWalls emits a
+     band per consecutive pair, so same-z ring pairs become flat annular
+     shoulders (facing into the pockets) and radius jumps become cones. */
+  var rings = [];
+  function pushRing(loop, z) {
+    var last = rings[rings.length - 1];
+    if (last && Math.abs(last.z - z) < 1e-9 && last.loop === loop) return;
+    rings.push({ loop: loop, z: z });
+  }
+  if (back && bi > 0 && rbh > r) {             // backside head pocket
+    pushRing(circB, 0);
+    pushRing(circB, bi);
+    pushRing(circ, bi + Math.max(0, csB));     // cone (csB > 0) or shoulder
+  }
+  var hz = hz0;                                // front head pocket floor
+  var zA = rings.length ? rings[rings.length - 1].z : 0;
+  if (hz < T) zA = Math.min(zA, hz);
+  var zT = hz < T ? hz - Math.min(csF, hz - zA) : T;
+  pushRing(circ, zA);
+  if (zT > zA + 1e-9) pushRing(circ, zT);
+  var topRing = circ;
+  if (hz < T) {
+    pushRing(circH, hz);                       // cone (csF > 0) or shoulder
+    if (T > hz + 1e-9) pushRing(circH, T);
+    topRing = circH;
+  }
+  var lv = [];
+  for (var i1 = 0; i1 < ZS.length; i1++)
+    lv.push({ loop: dia(ZS[i1]), z: ZS[i1] });
+  addSolid(m, lv,
+           [(back && bi > 0 && rbh > r) ? circB : circ], [topRing]);
+  addHoleWalls(m, rings);
+}
+
+function ogMergePieces(m, list) {
+  for (var i = 0; i < list.length; i++) {
+    m.pos.push.apply(m.pos, list[i].pos);
+    m.nrm.push.apply(m.nrm, list[i].nrm);
+  }
+}
+
+function ogBuildLevel(m, p, d, seg) {
+  var r = ogEmitLevel(p, d, seg);
+  ogMergePieces(m, r.solids);
+  ogMergePieces(m, r.voids);
+}
+
+/* Half diagonal of the diamond that fills a lattice node. */
+function ogNodeFillHalf(tile) {
+  return (Math.sqrt(OG.CORNER_SQ * OG.CORNER_SQ * 2) + OG.INTERSECT) / Math.SQRT2;
+}
+
+/* Board-to-board connector cutout outline, CCW. */
+function ogConnectorLoop(seg) {
+  function arc(cx, cy, r, a0, a1, steps) {
+    var out = [];
+    for (var i = 1; i <= steps; i++) {
+      var a = a0 + (a1 - a0) * i / steps;
+      out.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+    }
+    return out;
+  }
+  function meet(A, rA, B, rB) {
+    var dx = B[0] - A[0], dy = B[1] - A[1], dist = Math.hypot(dx, dy);
+    var along = (rA * rA - rB * rB + dist * dist) / (2 * dist);
+    var h = Math.sqrt(Math.max(0, rA * rA - along * along));
+    var mx = A[0] + along * dx / dist, my = A[1] + along * dy / dist;
+    return [[mx - dy * h / dist, my + dx * h / dist],
+            [mx + dy * h / dist, my - dx * h / dist]];
+  }
+  function at(C, P) { return Math.atan2(P[1] - C[1], P[0] - C[0]); }
+
+  var noseN = Math.max(6, Math.ceil(seg / 8));
+  var blendN = Math.max(10, Math.ceil(seg / 6));
+  var outerN = Math.max(16, Math.ceil(seg / 2));
+
+  var outerC = [OG.CONN_SEP, 0];
+  var blendUp = [0, OG.CONN_R + OG.CONN_SEP], blendDn = [0, -(OG.CONN_R + OG.CONN_SEP)];
+  var shInset = Math.sqrt(Math.pow(OG.CONN_BLEND + OG.CONN_SH, 2) -
+                          Math.pow(OG.CONN_SEP + OG.CONN_SH, 2));
+  var shUp = [shInset, OG.CONN_R - OG.CONN_SH], shDn = [shInset, -(OG.CONN_R - OG.CONN_SH)];
+  var sideHalf = OG.CONN_R + OG.CONN_SEP -
+    Math.sqrt(Math.pow(OG.CONN_BLEND - OG.CONN_STEM, 2) - OG.CONN_STEM * OG.CONN_STEM);
+  var noseUp = [OG.CONN_STEM, sideHalf], noseDn = [OG.CONN_STEM, -sideHalf];
+
+  var nUp = meet(noseUp, OG.CONN_STEM, blendUp, OG.CONN_BLEND)
+    .sort(function (a, b) { return b[1] - a[1]; })[0];
+  var sUp = meet(blendUp, OG.CONN_BLEND, shUp, OG.CONN_SH)
+    .sort(function (a, b) { return b[1] - a[1]; })[0];
+  var sDn = [sUp[0], -sUp[1]], nDn = [nUp[0], -nUp[1]];
+  var nUpA = at(noseUp, nUp); if (nUpA < 0) nUpA += 2 * Math.PI;
+
+  var pts = [[0, sideHalf]]
+    .concat(arc(noseUp[0], noseUp[1], OG.CONN_STEM, Math.PI, nUpA, noseN))
+    .concat(arc(blendUp[0], blendUp[1], OG.CONN_BLEND, at(blendUp, nUp), at(blendUp, sUp), blendN))
+    .concat(arc(shUp[0], shUp[1], OG.CONN_SH, at(shUp, sUp), Math.PI / 2, noseN))
+    .concat([[OG.CONN_SEP, OG.CONN_R]])
+    .concat(arc(outerC[0], outerC[1], OG.CONN_R, Math.PI / 2, -Math.PI / 2, outerN))
+    .concat([[shInset, -OG.CONN_R]])
+    .concat(arc(shDn[0], shDn[1], OG.CONN_SH, -Math.PI / 2, at(shDn, sDn), noseN))
+    .concat(arc(blendDn[0], blendDn[1], OG.CONN_BLEND, at(blendDn, sDn), at(blendDn, nDn), blendN))
+    .concat(arc(noseDn[0], noseDn[1], OG.CONN_STEM, at(noseDn, nDn), Math.PI, noseN));
+  if (signedArea(pts) < 0) pts = reverseLoop(pts);
+  return pts;
+}
+
+/* ---- prism helpers (sections may be concave; caps are ear-clipped) ---- */
+/* Same prism along Y: build along X in a scratch mesh, then swap x<->y.
+   The swap is a reflection, so the winding is reversed to keep the
+   outward normals -- both inherited from the proven addPrismX. */
+function addPrismY(mesh, section, y0, y1) {
+  var tmp = new Mesh();
+  addPrismX(tmp, section, y0, y1);
+  var p = tmp.pos, n = tmp.nrm;
+  for (var t = 0; t < tmp.count(); t++) {
+    var b = t * 9, v, P = [], N = [];
+    for (v = 0; v < 3; v++) {
+      P.push([p[b + v * 3 + 1], p[b + v * 3], p[b + v * 3 + 2]]);
+      N.push([n[b + v * 3 + 1], n[b + v * 3], n[b + v * 3 + 2]]);
+    }
+    mesh.tri(P[0], P[2], P[1], N[0], N[2], N[1]);
+  }
+}
+
+/* Classification of lattice node (ix,iy) of a W x H tile rectangle:
+   which of the four touching tiles exist.  Mirrors the openGrid Studio
+   placement logic (their y index runs top-down). */
+function ogNodeInfo(W, H, ix, iy) {
+  var nw = ix >= 1 && ix <= W && iy >= 1 && iy <= H;
+  var ne = ix <= W - 1 && iy >= 1 && iy <= H;
+  var sw = ix >= 1 && iy <= H - 1;
+  var se = ix <= W - 1 && iy <= H - 1;
+  var count = (nw ? 1 : 0) + (ne ? 1 : 0) + (sw ? 1 : 0) + (se ? 1 : 0);
+  if (count !== 2) return count === 0 ? null : { kind: count === 1 ? "outer" : "fill", rot: 0 };
+  if (nw && ne) return { kind: "edge", rot: 90 };
+  if (sw && se) return { kind: "edge", rot: -90 };
+  if (nw && sw) return { kind: "edge", rot: 180 };
+  return { kind: "edge", rot: 0 };          // ne && se
+}
+
+function deriveBoard(p) {
+  var W = Math.max(1, Math.min(20, Math.round(+p.ogW || 1)));
+  var H = Math.max(1, Math.min(20, Math.round(+p.ogH || 1)));
+  var lite = p.ogType === "lite";
+  /* ogstudio lite: the TOP 4 mm of the full board (z 2.8..6.8) shifted
+     down -- front head pocket survives, backside pockets do not */
+  var T = lite ? OG.LITE_T : OG.FULL_T;
+  var levels = p.ogStack ? Math.max(2, Math.min(10, Math.round(+p.ogStackN || 2))) : 1;
+  var stackGap = Math.max(0, +p.ogStackGap || 0);
+  var holes = (W - 1) * (H - 1);
+  return {
+    W: W, H: H, T: T, lite: lite, OX: W * OG.TILE, OY: H * OG.TILE,
+    levels: levels, stackGap: stackGap,
+    HTotal: levels * T + (levels - 1) * stackGap,
+    snapHoles: W * H,
+    screwHoles: p.ogScrews ? holes : 0,
+    connHoles: p.ogConnectors ? 2 * (W + H) - 4 : 0,
+    valid: W >= 1 && H >= 1
+  };
+}
+
+function* boardSteps(p, seg) {
+  var d = deriveBoard(p);
+  var m = new Mesh();
+  if (!d.valid) return { mesh: m, derived: d };
+
+  for (var lev = 0; lev < d.levels; lev++) {
+    var zoff = lev * (d.T + d.stackGap);
+    var startTri = m.count();
+    ogBuildLevel(m, p, d, seg.og);
+    if ((lev % 2) === 1) zFlipTris(m, startTri, d.T, zoff);
+    else zTranslateTris(m, startTri, zoff);
+    yield (lev + 1) / d.levels;
+  }
+  d.pieces = d.levels;
+  return { mesh: m, derived: d };
+}
+
+/* Shift every triangle of a freshly built level up by dz. */
+function zTranslateTris(mesh, fromTri, dz) {
+  var pos = mesh.pos;
+  for (var t = fromTri; t < mesh.count(); t++)
+    for (var v = 0; v < 3; v++) pos[t * 9 + v * 3 + 2] += dz;
+}
+
+/* =====================================================================
    The bin
    ===================================================================== */
 /* The two builders are generators: they yield a 0..1 fraction at points where
@@ -1750,6 +2562,7 @@ function runSteps(gen) {
 }
 function buildBin(P, seg) { return runSteps(binSteps(P, seg)); }
 function buildPlate(p, seg) { return runSteps(plateSteps(p, seg)); }
+function buildBoard(p, seg) { return runSteps(boardSteps(p, seg)); }
 
 /* =====================================================================
    Binary STL
@@ -1786,7 +2599,16 @@ if (typeof module !== "undefined") module.exports = { buildBin: buildBin, buildP
 var I18N = {
   en: {
     title: "Gridfinity Bin Configurator",
-    h_model: "Model", m_bin: "Bin", m_plate: "Baseplate",
+    h_model: "Model", m_bin: "Bin", m_plate: "Baseplate", m_og: "openGrid Board",
+    h_ogboard: "openGrid Board", og_full: "Full (6.8 mm)", og_lite: "Lite (4 mm)",
+    og_features: "Board Features",
+    og_screws: "Screw holes", og_shaft: "Shaft &oslash; (mm)", og_head: "Head &oslash; (mm)",
+    og_inset: "Head inset from top (mm)", og_cs: "Countersink", og_cs_deg: "Countersink angle (&deg;)",
+    og_back: "Backside head pocket", og_back_inset: "Pocket depth (mm)",
+    og_back_shrink: "Pocket shrink (mm)", og_back_cs: "Pocket countersink", og_back_cs_deg: "Pocket angle (&deg;)",
+    og_conn: "Board-to-board connectors",
+    og_hint: "28 mm openGrid lattice; 3 OG tiles = 2 Gridfinity units. Heads wider than 7.7 mm are clamped to fit the node.",
+    og_summary: "{w} &times; {h} tiles &middot; snap {snap} &middot; screws {scr} &middot; connectors {conn}",
     h_binsize: "Bin Size", l_width: "Width", l_depth: "Depth", l_height: "Height",
     h_platesize: "Baseplate Size", pm_units: "Grid Units", pm_mm: "Dimensions (mm)",
     l_width_mm: "Width (mm)", l_depth_mm: "Depth (mm)", l_depth_mm2: "Depth (mm)", l_width_mm2: "Width (mm)",
@@ -1851,7 +2673,16 @@ var I18N = {
   },
   ru: {
     title: "Gridfinity \u2014 конструктор ящиков",
-    h_model: "Модель", m_bin: "Ящик", m_plate: "Основание",
+    h_model: "Модель", m_bin: "Ящик", m_plate: "Основание", m_og: "openGrid-панель",
+    h_ogboard: "Панель openGrid", og_full: "Full (6,8 мм)", og_lite: "Lite (4 мм)",
+    og_features: "Особенности панели",
+    og_screws: "Отверстия под шурупы", og_shaft: "Шуруп &oslash; (мм)", og_head: "Головка &oslash; (мм)",
+    og_inset: "Утопление головки от верха (мм)", og_cs: "Зенковка", og_cs_deg: "Угол зенковки (&deg;)",
+    og_back: "Карман головки с тыла", og_back_inset: "Глубина кармана (мм)",
+    og_back_shrink: "Уменьшение кармана (мм)", og_back_cs: "Зенковка кармана", og_back_cs_deg: "Угол кармана (&deg;)",
+    og_conn: "Коннекторы панель-панель",
+    og_hint: "Решётка openGrid 28 мм; 3 тайла OG = 2 юнита Gridfinity. Головки шире 7,7 мм ограничиваются под узел.",
+    og_summary: "тайлов {w} &times; {h} &middot; снапов {snap} &middot; шурупов {scr} &middot; коннекторов {conn}",
     h_binsize: "Размер ящика", l_width: "Ширина", l_depth: "Глубина", l_height: "Высота",
     h_platesize: "Размер основания", pm_units: "Сетка (юниты)", pm_mm: "Размеры (мм)",
     l_width_mm: "Ширина (мм)", l_depth_mm: "Глубина (мм)", l_depth_mm2: "Глубина (мм)", l_width_mm2: "Ширина (мм)",
@@ -1969,8 +2800,8 @@ function applyLang() {
 /* =====================================================================
    Renderer
    ===================================================================== */
-var PREVIEW_SEG = { corner: 10, comp: 6, hole: 14 };
-var RENDER_SEG  = { corner: 44, comp: 18, hole: 48 };
+var PREVIEW_SEG = { corner: 10, comp: 6, hole: 14, og: 48 };
+var RENDER_SEG  = { corner: 44, comp: 18, hole: 48, og: 96 };
 
 var canvas = document.getElementById("gl");
 var errBox = document.getElementById("err");
@@ -2222,10 +3053,18 @@ var P = Object.assign({}, DEFAULTS, {
   labelW: 0,
   plateBase: 0, plateR: 4,
   bedX: 250, bedY: 220, plateGap: 0, plateConnectors: true,
-  plateStack: false, plateStackN: 2, plateStackGap: 0.2
+  plateStack: false, plateStackN: 2, plateStackGap: 0.2,
+  ogW: 4, ogH: 3, ogType: "full",
+  ogScrews: true, ogConnectors: true,
+  ogScrewD: 4.1, ogScrewHeadD: 7.2, ogScrewInset: 1,
+  ogCs: false, ogCsDeg: 90,
+  ogBackside: false, ogBackInset: 1, ogBackShrink: 0, ogBackCs: false, ogBackCsDeg: 90,
+  ogStack: false, ogStackN: 2, ogStackGap: 0.2
 });
-var FLOATS = ["wall","floorT","scoopR","labelD","labelW","fillet","plateBase","plateR","bedX","bedY","plateGap","plateStackGap"];
-var BOOLS = ["lip","scoop","label","mag","screw","plateConnectors","plateStack"];
+var FLOATS = ["wall","floorT","scoopR","labelD","labelW","fillet","plateBase","plateR","bedX","bedY","plateGap","plateStackGap",
+              "ogScrewD","ogScrewHeadD","ogScrewInset","ogCsDeg","ogBackInset","ogBackShrink","ogBackCsDeg","ogStackGap"];
+var BOOLS = ["lip","scoop","label","mag","screw","plateConnectors","plateStack",
+             "ogScrews","ogConnectors","ogCs","ogBackside","ogBackCs","ogStack"];
 var lastTris = 0;
 
 function mmToUnits(mm) {
@@ -2360,17 +3199,21 @@ function renderColList() {
 
 function readControls() {
   var isPlate = document.getElementById("mode_plate").checked;
-  P.mode = isPlate ? "plate" : "bin";
+  var isOg = document.getElementById("mode_og").checked;
+  P.mode = isOg ? "og" : (isPlate ? "plate" : "bin");
 
   var lblBin = document.getElementById("lbl_mode_bin");
   var lblPlate = document.getElementById("lbl_mode_plate");
-  if (lblBin) lblBin.className = !isPlate ? "active" : "";
+  var lblOg = document.getElementById("lbl_mode_og");
+  if (lblBin) lblBin.className = !isPlate && !isOg ? "active" : "";
   if (lblPlate) lblPlate.className = isPlate ? "active" : "";
+  if (lblOg) lblOg.className = isOg ? "active" : "";
 
-  document.getElementById("binSizeSection").hidden = isPlate;
-  document.getElementById("binOpts").hidden = isPlate;
-  document.getElementById("binFeatures").hidden = isPlate;
+  document.getElementById("binSizeSection").hidden = isPlate || isOg;
+  document.getElementById("binOpts").hidden = isPlate || isOg;
+  document.getElementById("binFeatures").hidden = isPlate || isOg;
   document.getElementById("plateOpts").hidden = !isPlate;
+  document.getElementById("ogOpts").hidden = !isOg;
 
   if (!isPlate) {
     var layoutGrid = document.getElementById("layout_grid").checked;
@@ -2511,6 +3354,26 @@ function readControls() {
   // visibility follows the freshly read state, so a single change event is enough
   var stackOpts = document.getElementById("stackOpts");
   if (stackOpts) stackOpts.hidden = !P.plateStack;
+
+  if (isOg) {
+    P.ogW = getVal("ogW", "ogW_num", 20);
+    P.ogH = getVal("ogH", "ogH_num", 20);
+    P.ogStackN = getVal("ogStackN", "ogStackN_num", 10, 2);
+    P.ogType = document.getElementById("og_type_lite").checked ? "lite" : "full";
+    var lblFull = document.getElementById("lbl_og_full");
+    var lblLite = document.getElementById("lbl_og_lite");
+    if (lblFull) lblFull.className = P.ogType === "full" ? "active" : "";
+    if (lblLite) lblLite.className = P.ogType === "lite" ? "active" : "";
+    var ogShow = function (id, on) {
+      var el = document.getElementById(id);
+      if (el) el.hidden = !on;
+    };
+    ogShow("ogScrewOpts", P.ogScrews);
+    ogShow("ogCsDegRow", P.ogScrews && P.ogCs);
+    ogShow("ogBackOpts", P.ogScrews && P.ogBackside);
+    ogShow("ogBackCsDegRow", P.ogScrews && P.ogBackside && P.ogBackCs);
+    ogShow("ogStackOpts", P.ogStack);
+  }
 }
 
 var fmt = function (n) { return (Math.round(n * 100) / 100).toString(); };
@@ -2528,13 +3391,16 @@ function applyMesh(res, q) {
 
 function rebuild(q) {
   var seg = q === "render" ? RENDER_SEG : PREVIEW_SEG;
-  var res = P.mode === "plate" ? buildPlate(P, seg) : buildBin(P, seg);
+  var res = P.mode === "plate" ? buildPlate(P, seg)
+          : P.mode === "og" ? buildBoard(P, seg)
+          : buildBin(P, seg);
   if (q === "render") renderCache = { sig: meshSig(P, seg), res: res };
   applyMesh(res, q);
 }
 
 function updateReadout() {
   if (P.mode === "plate") return updatePlateReadout();
+  if (P.mode === "og") return updateOgReadout();
   var d = derive(P);
   var MM = t("mm");
   document.getElementById("s_foot").textContent = fmt(d.OX) + " × " + fmt(d.OY) + " " + MM;
@@ -2560,6 +3426,21 @@ function updateReadout() {
   else if (d.depth < 2) msgs.push(t("warn_shallow"));
   warn.hidden = msgs.length === 0;
   warn.textContent = msgs.join(" ");
+}
+
+function updateOgReadout() {
+  var d = deriveBoard(P);
+  var MM = t("mm");
+  document.getElementById("s_foot").textContent = fmt(d.OX) + " × " + fmt(d.OY) + " " + MM;
+  document.getElementById("s_tall").textContent =
+    fmt(d.HTotal) + " " + MM +
+    (d.levels > 1 ? " (" + d.levels + " × " + fmt(d.T) + " " + MM + ")" : "");
+  document.getElementById("s_comp").textContent = t("og_summary", {
+    w: d.W, h: d.H, snap: d.snapHoles, scr: d.screwHoles, conn: d.connHoles
+  });
+  document.getElementById("s_depth").textContent =
+    fmt(d.T) + " " + MM + (d.T === OG.LITE_T ? " · Lite" : " · Full");
+  document.getElementById("s_warn").hidden = true;
 }
 
 function updatePlateReadout() {
@@ -2611,6 +3492,14 @@ function command() {
 }
 
 function stem() {
+  if (P.mode === "og") {
+    var db = deriveBoard(P);
+    var ogSfx = db.levels > 1
+      ? "_stack" + db.levels + "_g" + (Math.round(Math.max(0, +P.ogStackGap || 0) * 100) / 100)
+      : "";
+    return "opengrid_board_" + db.W + "x" + db.H + "_" +
+           (db.T === OG.LITE_T ? "lite" : "full") + ogSfx;
+  }
   if (P.mode === "plate") {
     var dp = derivePlate(P);
     if (dp.padLeft > 0 || dp.padRight > 0 || dp.padBottom > 0 || dp.padTop > 0) {
@@ -2670,7 +3559,10 @@ var SLIDERS = [
   { id: "scoopR", num: "scoopR_num", refit: false },
   { id: "labelD", num: "labelD_num", refit: false },
   { id: "labelW", num: "labelW_num", refit: false },
-  { id: "plateStackN", num: "plateStackN_num", refit: true }
+  { id: "plateStackN", num: "plateStackN_num", refit: true },
+  { id: "ogW", num: "ogW_num", refit: true },
+  { id: "ogH", num: "ogH_num", refit: true },
+  { id: "ogStackN", num: "ogStackN_num", refit: true }
 ];
 
 SLIDERS.forEach(function (s) {
@@ -2711,7 +3603,8 @@ SLIDERS.forEach(function (s) {
 FLOATS.concat(BOOLS).forEach(function (k) {
   var el = document.getElementById(k);
   if (!el) return;
-  var refit = k === "lip" || k === "plateR" || k === "plateStack" || k === "plateStackGap";
+  var refit = k === "lip" || k === "plateR" || k === "plateStack" || k === "plateStackGap" ||
+              k === "ogStack" || k === "ogStackGap";
   el.addEventListener("input", function () { onChange(refit); });
   el.addEventListener("change", function () { onChange(refit); });
 });
@@ -2724,7 +3617,7 @@ if (btnExact) {
   });
 }
 
-["mode_bin", "mode_plate", "layout_grid", "layout_rows", "layout_cols", "plate_mode_units", "plate_mode_mm"].forEach(function (id) {
+["mode_bin", "mode_plate", "mode_og", "layout_grid", "layout_rows", "layout_cols", "plate_mode_units", "plate_mode_mm", "og_type_full", "og_type_lite"].forEach(function (id) {
   var el = document.getElementById(id);
   if (el) el.addEventListener("change", function () { onChange(id.startsWith("mode") || id.startsWith("plate_mode")); });
 });
@@ -2771,7 +3664,7 @@ var SLICE_MS = 20;                 // how long to work before handing back
 var SLICE_MAX = 8;                 // ...and never more than this many slices,
 var CHUNK_MAX = 32;                // so a coarse or clamped clock still yields
 
-function meshSig(p, seg) { return seg.corner + "|" + JSON.stringify(p); }
+function meshSig(p, seg) { return (seg.corner || 0) + "/" + (seg.og || 0) + "|" + JSON.stringify(p); }
 
 function progShow(stage) {
   if (progHide) { clearTimeout(progHide); progHide = null; }
