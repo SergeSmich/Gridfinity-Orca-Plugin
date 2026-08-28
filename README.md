@@ -23,6 +23,10 @@ A parametric 3D generator plugin for **OrcaSlicer** that configures, previews, a
   * **Grid Units**: Sizing directly in integer $X \times Y$ grid units.
   * **Dimensions (mm)**: Input exact target drawer/tray dimensions in millimeters with automatic integer unit fitting ($\text{units} = \max(1, \lfloor(\text{mm} + 0.5)/42\rfloor)$).
   * **Exact Edge Padding**: Add fractional perimeter borders at the outer edges to hit the exact target millimeter dimensions without disrupting the 42 mm socket grid.
+* **Stackable Copies (batch printing)**:
+  * Stack 2–10 identical copies straight up in a single STL.
+  * Every second copy is laid upside down (sockets facing down), so the alternation is visible on any plate.
+  * Configurable vertical air gap between copies (default **0.2 mm**) so the levels never fuse.
 * **Large Bed Splitting & Connectors**:
   * Multi-piece interlocking segmentation planning ported from **GridFlock** (by Jonas Konrad).
   * Dove-tail puzzle joints that interlock securely across segments.
@@ -32,6 +36,7 @@ A parametric 3D generator plugin for **OrcaSlicer** that configures, previews, a
 ### 🚀 Slicer Integration & Experience
 * **Direct Build Plate Injection**: Exports binary STL files and automatically drops them into your active OrcaSlicer plate via single-instance IPC (D-Bus on Linux, `WM_COPYDATA` on Windows).
 * **Interactive 3D WebGL Viewport**: Orbit, zoom, and pan directly within the OrcaSlicer UI with dark/light theme matching and zero external web dependencies.
+* **Bilingual Interface (EN/RU)**: Full English and Russian UI with a language toggle at the top of the panel; the choice is remembered and defaults to the browser language.
 * **OpenSCAD Parity**: Matching parametric OpenSCAD script (`gridfinity_bin.scad`) supporting all features including custom `row_divisions` and `col_divisions` array parameters.
 
 ---

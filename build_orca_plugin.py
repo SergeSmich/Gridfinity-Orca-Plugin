@@ -57,9 +57,9 @@ TEMPLATE = '''# /// script
 #
 # [tool.orcaslicer.plugin]
 # name = "Gridfinity Bin & Baseplate Generator"
-# description = "Parametric Gridfinity bins and interlocking baseplates: custom compartments, exact mm sizing with edge padding, 3D WebGL preview, and direct build plate drop."
+# description = "Parametric Gridfinity bins and interlocking baseplates: custom compartments, exact mm sizing with edge padding, stackable copies (180-degree alternation), EN/RU interface, 3D WebGL preview, and direct build plate drop."
 # author = "jonas"
-# version = "1.5.6"
+# version = "1.6.0"
 """Gridfinity bin and baseplate generator for OrcaSlicer.
 
 Registers two capabilities:
@@ -73,6 +73,9 @@ Features:
   * Advanced custom compartments (Uniform, Per-Row, Per-Column)
   * Interlocking baseplates with puzzle connectors & print-bed splitting
   * Millimeter sizing with automatic unit fitting and optional edge padding
+  * Stackable baseplate copies: N levels straight up, every second one
+    rotated 180 degrees, with a configurable air gap (default 0.2 mm)
+  * Bilingual interface (English / Russian)
   * Direct build plate STL injection via single-instance IPC
 
 GENERATED FILE. Edit gridfinity_bin.html and re-run build_orca_plugin.py.

@@ -4,9 +4,9 @@
 #
 # [tool.orcaslicer.plugin]
 # name = "Gridfinity Bin & Baseplate Generator"
-# description = "Parametric Gridfinity bins and interlocking baseplates: custom compartments, exact mm sizing with edge padding, 3D WebGL preview, and direct build plate drop."
+# description = "Parametric Gridfinity bins and interlocking baseplates: custom compartments, exact mm sizing with edge padding, stackable copies (180-degree alternation), EN/RU interface, 3D WebGL preview, and direct build plate drop."
 # author = "jonas"
-# version = "1.5.6"
+# version = "1.6.0"
 """Gridfinity bin and baseplate generator for OrcaSlicer.
 
 Registers two capabilities:
@@ -20,6 +20,9 @@ Features:
   * Advanced custom compartments (Uniform, Per-Row, Per-Column)
   * Interlocking baseplates with puzzle connectors & print-bed splitting
   * Millimeter sizing with automatic unit fitting and optional edge padding
+  * Stackable baseplate copies: N levels straight up, every second one
+    rotated 180 degrees, with a configurable air gap (default 0.2 mm)
+  * Bilingual interface (English / Russian)
   * Direct build plate STL injection via single-instance IPC
 
 GENERATED FILE. Edit gridfinity_bin.html and re-run build_orca_plugin.py.
@@ -574,49 +577,56 @@ canvas.dragging { cursor:grabbing; }
 <body>
 <div class="app">
   <aside class="panel">
+    <section style="margin-bottom:14px">
+      <div class="modes submodes" style="max-width:150px">
+        <label id="lbl_lang_en" class="active"><input type="radio" name="lang" id="lang_en" value="en" checked> EN</label>
+        <label id="lbl_lang_ru"><input type="radio" name="lang" id="lang_ru" value="ru"> RU</label>
+      </div>
+    </section>
+
     <section>
-      <h2>Model</h2>
+      <h2 data-i="h_model">Model</h2>
       <div class="modes">
-        <label id="lbl_mode_bin" class="active"><input type="radio" name="mode" id="mode_bin" value="bin" checked> Bin</label>
-        <label id="lbl_mode_plate"><input type="radio" name="mode" id="mode_plate" value="plate"> Baseplate</label>
+        <label id="lbl_mode_bin" class="active"><input type="radio" name="mode" id="mode_bin" value="bin" checked> <span data-i="m_bin">Bin</span></label>
+        <label id="lbl_mode_plate"><input type="radio" name="mode" id="mode_plate" value="plate"> <span data-i="m_plate">Baseplate</span></label>
       </div>
     </section>
 
     <section id="binSizeSection">
-      <h2>Bin Size</h2>
+      <h2 data-i="h_binsize">Bin Size</h2>
       <div class="row">
-        <label for="gx">Width</label>
+        <label for="gx" data-i="l_width">Width</label>
         <input type="range" id="gx" min="1" max="12" step="1" value="2">
         <input type="number" id="gx_num" min="1" max="50" step="1" value="2">
       </div>
       <div class="row">
-        <label for="gy">Depth</label>
+        <label for="gy" data-i="l_depth">Depth</label>
         <input type="range" id="gy" min="1" max="12" step="1" value="1">
         <input type="number" id="gy_num" min="1" max="50" step="1" value="1">
       </div>
       <div class="row" id="row_gz">
-        <label for="gz">Height</label>
+        <label for="gz" data-i="l_height">Height</label>
         <input type="range" id="gz" min="1" max="20" step="1" value="6">
         <input type="number" id="gz_num" min="1" max="50" step="1" value="6">
       </div>
     </section>
 
     <section id="plateOpts" hidden>
-      <h2>Baseplate Size</h2>
+      <h2 data-i="h_platesize">Baseplate Size</h2>
       <div class="modes submodes">
-        <label id="lbl_plate_units" class="active"><input type="radio" name="plate_size_mode" id="plate_mode_units" value="units" checked> Grid Units</label>
-        <label id="lbl_plate_mm"><input type="radio" name="plate_size_mode" id="plate_mode_mm" value="mm"> Dimensions (mm)</label>
+        <label id="lbl_plate_units" class="active"><input type="radio" name="plate_size_mode" id="plate_mode_units" value="units" checked> <span data-i="pm_units">Grid Units</span></label>
+        <label id="lbl_plate_mm"><input type="radio" name="plate_size_mode" id="plate_mode_mm" value="mm"> <span data-i="pm_mm">Dimensions (mm)</span></label>
       </div>
 
       <!-- Grid Units Mode -->
       <div id="plateUnitsOpts">
         <div class="row">
-          <label for="plate_gx">Width</label>
+          <label for="plate_gx" data-i="l_width">Width</label>
           <input type="range" id="plate_gx" min="1" max="20" step="1" value="4">
           <input type="number" id="plate_gx_num" min="1" max="50" step="1" value="4">
         </div>
         <div class="row">
-          <label for="plate_gy">Depth</label>
+          <label for="plate_gy" data-i="l_depth">Depth</label>
           <input type="range" id="plate_gy" min="1" max="20" step="1" value="3">
           <input type="number" id="plate_gy_num" min="1" max="50" step="1" value="3">
         </div>
@@ -625,12 +635,12 @@ canvas.dragging { cursor:grabbing; }
       <!-- Millimeters Mode -->
       <div id="plateMmOpts" hidden>
         <div class="row">
-          <label for="plate_mm_x">Width (mm)</label>
+          <label for="plate_mm_x" data-i="l_width_mm">Width (mm)</label>
           <input type="range" id="plate_mm_x" min="42" max="600" step="1" value="168">
           <input type="number" id="plate_mm_x_num" min="10" max="2000" step="1" value="168">
         </div>
         <div class="row">
-          <label for="plate_mm_y">Depth (mm)</label>
+          <label for="plate_mm_y" data-i="l_depth_mm">Depth (mm)</label>
           <input type="range" id="plate_mm_y" min="42" max="600" step="1" value="126">
           <input type="number" id="plate_mm_y_num" min="10" max="2000" step="1" value="126">
         </div>
@@ -643,48 +653,63 @@ canvas.dragging { cursor:grabbing; }
 
         <div id="plateBufferAlignOpts" hidden style="margin-top:6px; margin-bottom:8px">
           <div class="row">
-            <label for="buf_x_ratio">Left ⟷ Right</label>
+            <label for="buf_x_ratio" data-i="l_buf_x">Left ⟷ Right</label>
             <input type="range" id="buf_x_ratio" min="0" max="100" step="1" value="50">
             <input type="number" id="buf_x_ratio_num" min="0" max="100" step="1" value="50">
           </div>
           <div class="row">
-            <label for="buf_y_ratio">Down ⟷ Up</label>
+            <label for="buf_y_ratio" data-i="l_buf_y">Down ⟷ Up</label>
             <input type="range" id="buf_y_ratio" min="0" max="100" step="1" value="50">
             <input type="number" id="buf_y_ratio_num" min="0" max="100" step="1" value="50">
           </div>
         </div>
       </div>
 
-      <h2 style="margin-top:16px">Baseplate Options</h2>
-      <div class="num"><label for="plateBase">Solid base (mm)</label><input type="number" id="plateBase" min="0" max="20" step="0.5" value="0"></div>
-      <div class="num"><label for="plateR">Corner radius</label><input type="number" id="plateR" min="0" max="12" step="0.5" value="4"></div>
-      <div class="num"><label for="bedX">Bed X (mm)</label><input type="number" id="bedX" min="42" max="2000" step="5" value="250"></div>
-      <div class="num"><label for="bedY">Bed Y (mm)</label><input type="number" id="bedY" min="42" max="2000" step="5" value="220"></div>
-      <div class="num"><label for="plateGap">Explode gap</label><input type="number" id="plateGap" min="0" max="60" step="1" value="0"></div>
+      <h2 style="margin-top:16px" data-i="h_plateopts">Baseplate Options</h2>
+      <div class="num"><label for="plateBase" data-i="l_plate_base">Solid base (mm)</label><input type="number" id="plateBase" min="0" max="20" step="0.5" value="0"></div>
+      <div class="num"><label for="plateR" data-i="l_plate_r">Corner radius</label><input type="number" id="plateR" min="0" max="12" step="0.5" value="4"></div>
+      <div class="num"><label for="bedX" data-i="l_bed_x">Bed X (mm)</label><input type="number" id="bedX" min="42" max="2000" step="5" value="250"></div>
+      <div class="num"><label for="bedY" data-i="l_bed_y">Bed Y (mm)</label><input type="number" id="bedY" min="42" max="2000" step="5" value="220"></div>
+      <div class="num"><label for="plateGap" data-i="l_plate_gap">Explode gap</label><input type="number" id="plateGap" min="0" max="60" step="1" value="0"></div>
       <div id="bedRow" class="bedrow" hidden>
-        <button id="btnBed" type="button">Use printer bed</button>
+        <button id="btnBed" type="button" data-i="btn_bed">Use printer bed</button>
         <span id="bedFrom"></span>
       </div>
-      <label class="check"><input type="checkbox" id="plateConnectors" checked> Puzzle connectors</label>
+      <label class="check"><input type="checkbox" id="plateConnectors" checked> <span data-i="conn">Puzzle connectors</span></label>
+
+      <h2 style="margin-top:16px" data-i="stacking_h">Stacking copies</h2>
+      <label class="check"><input type="checkbox" id="plateStack"> <span data-i="stacking_on">Stack copies upward</span></label>
+      <div id="stackOpts" hidden style="margin-left:24px; margin-top:2px; margin-bottom:8px">
+        <div class="row">
+          <label for="plateStackN" data-i="stacking_copies">Copies</label>
+          <input type="range" id="plateStackN" min="2" max="10" step="1" value="2">
+          <input type="number" id="plateStackN_num" min="2" max="10" step="1" value="2">
+        </div>
+        <div class="num">
+          <label for="plateStackGap" data-i="stacking_gap">Gap between copies (mm)</label>
+          <input type="number" id="plateStackGap" min="0" max="5" step="0.05" value="0.2">
+        </div>
+        <div style="font-size:11px; color:var(--muted); margin-bottom:4px" data-i="stacking_hint">Every second copy is rotated 180° so the seams do not line up.</div>
+      </div>
     </section>
 
     <section id="binOpts">
-      <h2>Compartments</h2>
+      <h2 data-i="h_comps">Compartments</h2>
       <div class="modes submodes">
-        <label id="lbl_layout_grid" class="active"><input type="radio" name="comp_layout" id="layout_grid" value="grid" checked> Uniform</label>
-        <label id="lbl_layout_rows"><input type="radio" name="comp_layout" id="layout_rows" value="rows"> By Row</label>
-        <label id="lbl_layout_cols"><input type="radio" name="comp_layout" id="layout_cols" value="cols"> By Column</label>
+        <label id="lbl_layout_grid" class="active"><input type="radio" name="comp_layout" id="layout_grid" value="grid" checked> <span data-i="cl_grid">Uniform</span></label>
+        <label id="lbl_layout_rows"><input type="radio" name="comp_layout" id="layout_rows" value="rows"> <span data-i="cl_rows">By Row</span></label>
+        <label id="lbl_layout_cols"><input type="radio" name="comp_layout" id="layout_cols" value="cols"> <span data-i="cl_cols">By Column</span></label>
       </div>
 
       <!-- Uniform Grid -->
       <div id="compGridOpts">
         <div class="row">
-          <label for="dx">Across X</label>
+          <label for="dx" data-i="l_dx">Across X</label>
           <input type="range" id="dx" min="1" max="8" step="1" value="2">
           <input type="number" id="dx_num" min="1" max="50" step="1" value="2">
         </div>
         <div class="row">
-          <label for="dy">Across Y</label>
+          <label for="dy" data-i="l_dy">Across Y</label>
           <input type="range" id="dy" min="1" max="8" step="1" value="1">
           <input type="number" id="dy_num" min="1" max="50" step="1" value="1">
         </div>
@@ -693,7 +718,7 @@ canvas.dragging { cursor:grabbing; }
       <!-- By Row -->
       <div id="compRowOpts" hidden>
         <div class="row">
-          <label for="num_rows">Total Rows</label>
+          <label for="num_rows" data-i="l_num_rows">Total Rows</label>
           <input type="range" id="num_rows" min="1" max="8" step="1" value="2">
           <input type="number" id="num_rows_num" min="1" max="50" step="1" value="2">
         </div>
@@ -703,7 +728,7 @@ canvas.dragging { cursor:grabbing; }
       <!-- By Column -->
       <div id="compColOpts" hidden>
         <div class="row">
-          <label for="num_cols">Total Cols</label>
+          <label for="num_cols" data-i="l_num_cols">Total Cols</label>
           <input type="range" id="num_cols" min="1" max="8" step="1" value="2">
           <input type="number" id="num_cols_num" min="1" max="50" step="1" value="2">
         </div>
@@ -712,61 +737,61 @@ canvas.dragging { cursor:grabbing; }
     </section>
 
     <section id="binFeatures">
-      <h2>Features</h2>
-      <label class="check"><input type="checkbox" id="lip" checked> Stacking lip</label>
-      <label class="check"><input type="checkbox" id="scoop" checked> Finger scoop</label>
+      <h2 data-i="h_features">Features</h2>
+      <label class="check"><input type="checkbox" id="lip" checked> <span data-i="f_lip">Stacking lip</span></label>
+      <label class="check"><input type="checkbox" id="scoop" checked> <span data-i="f_scoop">Finger scoop</span></label>
       <div id="scoopOpts" style="margin-left:24px; margin-top:2px; margin-bottom:8px">
         <div class="row" style="margin-bottom:6px">
-          <label for="scoopR">Radius (mm)</label>
+          <label for="scoopR" data-i="l_radius_mm">Radius (mm)</label>
           <input type="range" id="scoopR" min="1" max="25" step="0.5" value="6">
           <input type="number" id="scoopR_num" min="0.5" max="50" step="0.5" value="6">
         </div>
       </div>
-      <label class="check"><input type="checkbox" id="label"> Label tab</label>
+      <label class="check"><input type="checkbox" id="label"> <span data-i="f_label">Label tab</span></label>
       <div id="labelOpts" hidden style="margin-left:24px; margin-top:2px; margin-bottom:8px">
         <div class="row" style="margin-bottom:6px">
-          <label for="labelD">Depth (mm)</label>
+          <label for="labelD" data-i="l_depth_mm2">Depth (mm)</label>
           <input type="range" id="labelD" min="2" max="30" step="0.5" value="12">
           <input type="number" id="labelD_num" min="1" max="50" step="0.5" value="12">
         </div>
         <div class="row" style="margin-bottom:4px">
-          <label for="labelW">Width (mm)</label>
+          <label for="labelW" data-i="l_width_mm2">Width (mm)</label>
           <input type="range" id="labelW" min="0" max="150" step="1" value="0">
           <input type="number" id="labelW_num" min="0" max="500" step="1" value="0">
         </div>
-        <div style="font-size:11px; color:var(--muted); margin-bottom:4px">0 = Full compartment width</div>
+        <div style="font-size:11px; color:var(--muted); margin-bottom:4px"data-i="label_full_w">0 = Full compartment width</div>
       </div>
-      <label class="check"><input type="checkbox" id="mag"> Magnet holes (6&times;2&nbsp;mm)</label>
-      <label class="check"><input type="checkbox" id="screw"> Screw holes (M3)</label>
+      <label class="check"><input type="checkbox" id="mag"> <span data-i="f_mag">Magnet holes (6&times;2&nbsp;mm)</span></label>
+      <label class="check"><input type="checkbox" id="screw"> <span data-i="f_screw">Screw holes (M3)</span></label>
     </section>
 
     <details>
-      <summary>Advanced</summary>
-      <div class="num"><label for="wall">Wall (mm)</label><input type="number" id="wall" min="0.4" max="5" step="0.1" value="1.2"></div>
-      <div class="num"><label for="floorT">Floor (mm)</label><input type="number" id="floorT" min="0.4" max="10" step="0.1" value="1.4"></div>
-      <div class="num"><label for="fillet">Inner fillet</label><input type="number" id="fillet" min="0" max="5" step="0.1" value="0.8"></div>
+      <summary data-i="h_advanced">Advanced</summary>
+      <div class="num"><label for="wall" data-i="l_wall">Wall (mm)</label><input type="number" id="wall" min="0.4" max="5" step="0.1" value="1.2"></div>
+      <div class="num"><label for="floorT" data-i="l_floor">Floor (mm)</label><input type="number" id="floorT" min="0.4" max="10" step="0.1" value="1.4"></div>
+      <div class="num"><label for="fillet" data-i="l_fillet">Inner fillet</label><input type="number" id="fillet" min="0" max="5" step="0.1" value="0.8"></div>
     </details>
 
     <section class="stats">
-      <h2>Result</h2>
+      <h2 data-i="h_result">Result</h2>
       <dl>
-        <dt>Footprint</dt><dd id="s_foot"></dd>
-        <dt>Total height</dt><dd id="s_tall"></dd>
-        <dt>Compartment</dt><dd id="s_comp"></dd>
-        <dt>Usable depth</dt><dd id="s_depth"></dd>
-        <dt>Triangles</dt><dd id="s_tris"></dd>
+        <dt data-i="s_foot_l">Footprint</dt><dd id="s_foot"></dd>
+        <dt data-i="s_tall_l">Total height</dt><dd id="s_tall"></dd>
+        <dt data-i="s_comp_l">Compartment</dt><dd id="s_comp"></dd>
+        <dt data-i="s_depth_l">Usable depth</dt><dd id="s_depth"></dd>
+        <dt data-i="s_tris_l">Triangles</dt><dd id="s_tris"></dd>
       </dl>
       <div class="warn" id="s_warn" hidden></div>
     </section>
 
     <section>
-      <h2>Output</h2>
+      <h2 data-i="h_output">Output</h2>
       <div class="btns" style="margin-bottom:10px">
-        <button class="primary" id="btnRender">Render</button>
-        <button id="btnStl">Export STL</button>
+        <button class="primary" id="btnRender" data-i="btn_render">Render</button>
+        <button id="btnStl" data-i="btn_stl">Export STL</button>
       </div>
       <label class="check" id="toPlateRow" hidden style="margin-bottom:10px">
-        <input type="checkbox" id="toPlate" checked> Add to build plate after export
+        <input type="checkbox" id="toPlate" checked> <span data-i="to_plate">Add to build plate after export</span>
       </label>
       <div id="prog" class="prog" hidden>
         <div class="track"><div class="fill" id="progFill"></div></div>
@@ -780,12 +805,12 @@ canvas.dragging { cursor:grabbing; }
     <canvas id="gl"></canvas>
     <div class="badge" id="badge">Preview</div>
     <div class="views">
-      <button data-view="iso">Iso</button>
-      <button data-view="front">Front</button>
-      <button data-view="top">Top</button>
-      <button data-view="under">Under</button>
+      <button data-view="iso" data-i="v_iso">Iso</button>
+      <button data-view="front" data-i="v_front">Front</button>
+      <button data-view="top" data-i="v_top">Top</button>
+      <button data-view="under" data-i="v_under">Under</button>
     </div>
-    <div class="hint">drag to orbit &middot; scroll to zoom &middot; shift-drag to pan</div>
+    <div class="hint" data-i="hint">drag to orbit &middot; scroll to zoom &middot; shift-drag to pan</div>
     <div class="err" id="err" hidden></div>
   </main>
 </div>
@@ -1440,6 +1465,11 @@ function derivePlate(p) {
     padBottom = Math.round(remY * (1 - ry) * 100) / 100;
     padTop = Math.round((remY - padBottom) * 100) / 100;
   }
+  // Stacked copies: levels go straight up, every second level is rotated
+  // 180 deg about the plate centre, a fixed air gap separates the copies.
+  var levels = p.plateStack ? Math.max(2, Math.min(10, Math.round(+p.plateStackN || 2))) : 1;
+  var stackGap = Math.max(0, +p.plateStackGap || 0);
+  var H = base + PLATE_PROFILE_H;
   return {
     OX: p.gx * GRID + padLeft + padRight,
     OY: p.gy * GRID + padBottom + padTop,
@@ -1448,7 +1478,10 @@ function derivePlate(p) {
     padBottom: padBottom,
     padTop: padTop,
     base: base,
-    H: base + PLATE_PROFILE_H,
+    H: H,
+    levels: levels,
+    stackGap: stackGap,
+    HTotal: levels * H + (levels - 1) * stackGap,
     cornerR: p.plateR === undefined ? PLATE_CORNER_R : p.plateR,
     valid: p.gx >= 1 && p.gy >= 1
   };
@@ -1684,12 +1717,34 @@ function clearSockets(outline, p, i0, i1, j0, j1, dx, dy, nc) {
   return outline;
 }
 
-// One printable piece: the cell rectangle [i0,i1) x [j0,j1) of the plate.
-function addPlateSegment(m, p, d, seg, i0, i1, j0, j1, dx, dy, conn) {
+// Mirror freshly built triangles through a horizontal plane: z -> H - z,
+// lifted by zoff, with vertex order (and normals) reversed so the STL
+// winding stays outward.  Used to lay every second stacked copy upside down.
+function zFlipTris(mesh, fromTri, levelH, zoff) {
+  var p = mesh.pos, n = mesh.nrm;
+  for (var t = fromTri; t < mesh.count(); t++) {
+    var b = t * 9, v, k;
+    for (v = 0; v < 3; v++) {
+      var i = b + v * 3;
+      p[i + 2] = levelH - p[i + 2] + zoff;
+      n[i] = -n[i]; n[i + 1] = -n[i + 1]; n[i + 2] = -n[i + 2];
+    }
+    for (k = 0; k < 3; k++) {              // swap vtx 1 <-> 2: undo the mirror
+      var a1 = b + 3 + k, a2 = b + 6 + k, tmp = p[a1];
+      p[a1] = p[a2]; p[a2] = tmp;
+      tmp = n[a1]; n[a1] = n[a2]; n[a2] = tmp;
+    }
+  }
+}
+
+// One printable piece: the cell rectangle [i0,i1) x [j0,j1) of the plate,
+// lifted to zoff (its level in a stack).
+function addPlateSegment(m, p, d, seg, i0, i1, j0, j1, dx, dy, conn, zoff) {
   var nc = seg.corner, i, j, k;
+  zoff = zoff || 0;
   var outline = clearSockets(segmentOutline(p, d, i0, i1, j0, j1, conn, nc, dx, dy),
                              p, i0, i1, j0, j1, dx, dy, nc);
-  addBand(m, outline, 0, outline, d.H, false);
+  addBand(m, outline, zoff, outline, d.H + zoff, false);
 
   var tops = [], floors = [];
   for (i = i0; i < i1; i++) for (j = j0; j < j1; j++) {
@@ -1701,7 +1756,7 @@ function addPlateSegment(m, p, d, seg, i0, i1, j0, j1, dx, dy, conn) {
       lv.push({
         loop: offsetLoop(rrLoop(SOCKET[k][1] - shrink, SOCKET[k][1] - shrink,
                                 Math.max(0, SOCKET[k][2] - shrink / 2), nc), ox, oy),
-        z: d.H - SOCKET[k][0]
+        z: d.H - SOCKET[k][0] + zoff
       });
     }
     // levels run top-down, so the un-flipped winding already faces the void
@@ -1711,14 +1766,14 @@ function addPlateSegment(m, p, d, seg, i0, i1, j0, j1, dx, dy, conn) {
     floors.push(lv[lv.length - 1]);
   }
 
-  addCap(m, outline, tops, d.H, true);
+  addCap(m, outline, tops, d.H + zoff, true);
   if (d.base > 1e-6) {
     // the socket floor sits on solid base, so it faces up into the socket
     for (k = 0; k < floors.length; k++)
       addCap(m, floors[k].loop, [], floors[k].z, true);
-    addCap(m, outline, [], 0, false);
+    addCap(m, outline, [], zoff, false);
   } else {
-    addCap(m, outline, floors.map(function (f) { return f.loop; }), 0, false);
+    addCap(m, outline, floors.map(function (f) { return f.loop; }), zoff, false);
   }
 }
 
@@ -1730,33 +1785,46 @@ function* plateSteps(p, seg) {
   var plan = planPlate(p);
   var colEdge = cumulate(plan.cols);
   var gap = Math.max(0, p.plateGap || 0);
-  var pieces = 0, sx, sy;
+  var levels = d.levels, stackGap = d.stackGap;
+  var pieces = 0, perLevel = 0, sx, sy;
 
-  var slices = 0;
+  var slicesPerLevel = 0;
   for (sx = 0; sx < plan.cols.length; sx++)
     for (sy = 0; sy < plan.rows[sx % 2].length; sy++)
-      if (plan.rows[sx % 2][sy] !== 0 && plan.cols[sx] !== 0) slices++;
+      if (plan.rows[sx % 2][sy] !== 0 && plan.cols[sx] !== 0) slicesPerLevel++;
 
-  for (sx = 0; sx < plan.cols.length; sx++) {
-    var rowsPlan = plan.rows[sx % 2];
-    var rowEdge = cumulate(rowsPlan);
-    for (sy = 0; sy < rowsPlan.length; sy++) {
-      if (rowsPlan[sy] === 0 || plan.cols[sx] === 0) continue;
-      var dx = (sx - (plan.cols.length - 1) / 2) * gap;
-      var dy = (sy - (rowsPlan.length - 1) / 2) * gap;
-      var conn = {
-        W: sx > 0, E: sx < plan.cols.length - 1,
-        S: sy > 0, N: sy < rowsPlan.length - 1
-      };
-      if (!p.plateConnectors) conn = { W: false, E: false, S: false, N: false };
-      addPlateSegment(m, p, d, seg,
-                      colEdge[sx], colEdge[sx + 1],
-                      rowEdge[sy], rowEdge[sy + 1], dx, dy, conn);
-      pieces += 1;
-      yield pieces / slices;
+  // levels stack straight up; odd ones are flipped upside down (sockets down)
+  for (var lev = 0; lev < levels; lev++) {
+    var zoff = lev * (d.H + stackGap);
+    var flip = (lev % 2) === 1;
+    var built = 0;
+    for (sx = 0; sx < plan.cols.length; sx++) {
+      var rowsPlan = plan.rows[sx % 2];
+      var rowEdge = cumulate(rowsPlan);
+      for (sy = 0; sy < rowsPlan.length; sy++) {
+        if (rowsPlan[sy] === 0 || plan.cols[sx] === 0) continue;
+        var dx = (sx - (plan.cols.length - 1) / 2) * gap;
+        var dy = (sy - (rowsPlan.length - 1) / 2) * gap;
+        var conn = {
+          W: sx > 0, E: sx < plan.cols.length - 1,
+          S: sy > 0, N: sy < rowsPlan.length - 1
+        };
+        if (!p.plateConnectors) conn = { W: false, E: false, S: false, N: false };
+        var startTri = m.count();
+        addPlateSegment(m, p, d, seg,
+                        colEdge[sx], colEdge[sx + 1],
+                        rowEdge[sy], rowEdge[sy + 1], dx, dy, conn,
+                        flip ? 0 : zoff);
+        if (flip) zFlipTris(m, startTri, d.H, zoff);
+        built += 1;
+        yield (lev + built / slicesPerLevel) / levels;
+      }
     }
+    pieces += built;
+    perLevel = built;
   }
   d.pieces = pieces;
+  d.piecesPerLevel = perLevel;
   d.plan = plan;
   return { mesh: m, derived: d, plan: plan };
 }
@@ -2120,7 +2188,195 @@ function toSTL(mesh) {
   return buf;
 }
 
-if (typeof module !== "undefined") module.exports = { buildBin: buildBin, derive: derive, toSTL: toSTL, DEFAULTS: DEFAULTS };
+if (typeof module !== "undefined") module.exports = { buildBin: buildBin, buildPlate: buildPlate, derive: derive, derivePlate: derivePlate, toSTL: toSTL, DEFAULTS: DEFAULTS };
+
+/* =====================================================================
+   i18n -- EN/RU.  Static nodes carry data-i="key"; dynamic strings go
+   through t().  The choice persists in localStorage when available and
+   defaults to the browser language.
+   ===================================================================== */
+var I18N = {
+  en: {
+    title: "Gridfinity Bin Configurator",
+    h_model: "Model", m_bin: "Bin", m_plate: "Baseplate",
+    h_binsize: "Bin Size", l_width: "Width", l_depth: "Depth", l_height: "Height",
+    h_platesize: "Baseplate Size", pm_units: "Grid Units", pm_mm: "Dimensions (mm)",
+    l_width_mm: "Width (mm)", l_depth_mm: "Depth (mm)", l_depth_mm2: "Depth (mm)", l_width_mm2: "Width (mm)",
+    l_buf_x: "Left ⟷ Right", l_buf_y: "Down ⟷ Up",
+    h_plateopts: "Baseplate Options",
+    l_plate_base: "Solid base (mm)", l_plate_r: "Corner radius",
+    l_bed_x: "Bed X (mm)", l_bed_y: "Bed Y (mm)", l_plate_gap: "Explode gap",
+    btn_bed: "Use printer bed", conn: "Puzzle connectors",
+    stacking_h: "Stacking copies", stacking_on: "Stack copies upward",
+    stacking_copies: "Copies", stacking_gap: "Gap between copies (mm)",
+    stacking_hint: "Every second copy is laid upside down (sockets facing down); the air gap keeps the copies from fusing.",
+    h_comps: "Compartments", cl_grid: "Uniform", cl_rows: "By Row", cl_cols: "By Column",
+    l_dx: "Across X", l_dy: "Across Y", l_num_rows: "Total Rows", l_num_cols: "Total Cols",
+    row_n: "Row {n}", col_n: "Col {n}", pos_front: " (Front)", pos_back: " (Back)", pos_left: " (Left)", pos_right: " (Right)",
+    h_features: "Features",
+    f_lip: "Stacking lip", f_scoop: "Finger scoop", l_radius_mm: "Radius (mm)",
+    f_label: "Label tab", label_full_w: "0 = Full compartment width",
+    f_mag: "Magnet holes (6&times;2&nbsp;mm)", f_screw: "Screw holes (M3)",
+    h_advanced: "Advanced", l_wall: "Wall (mm)", l_floor: "Floor (mm)", l_fillet: "Inner fillet",
+    h_result: "Result", s_foot_l: "Footprint", s_tall_l: "Total height",
+    s_comp_l: "Compartment", s_depth_l: "Usable depth", s_tris_l: "Triangles",
+    h_output: "Output", btn_render: "Render", btn_stl: "Export STL",
+    to_plate: "Add to build plate after export",
+    v_iso: "Iso", v_front: "Front", v_top: "Top", v_under: "Under",
+    hint: "drag to orbit &middot; scroll to zoom &middot; shift-drag to pan",
+    badge_preview: "Preview", badge_rendering: "Rendering\u2026", badge_rendered: "Rendered",
+    prog_building: "Building", prog_encoding: "Encoding", prog_writing: "Writing STL",
+    prog_saving: "Saving", prog_sending: "Handing to OrcaSlicer",
+    prog_done: "Rendered", prog_failed: "Failed", prog_sent: "Sent", prog_saved: "Saved",
+    mm: "mm",
+    body_of: " (body {h})",
+    no_comps: "0 compartments",
+    comp_one: "1 ({w} \u00d7 {d} mm)",
+    comp_rows: "{n} in {r} rows ({divs})",
+    comp_cols: "{n} in {c} cols ({divs})",
+    comp_plain: "{n} ({w} \u00d7 {d} mm)",
+    warn_invalid: "These settings leave no usable compartment.",
+    warn_shallow: "Compartments are under 2 mm deep \u2014 raise the height.",
+    cells: "{x} \u00d7 {y} cells",
+    plus_buffer: " + buffer (exact {x} \u00d7 {y} mm)",
+    target_mm: " (target {x} \u00d7 {y} mm)",
+    piece_one: "{n} piece", piece_many: "{n} pieces",
+    cols_split: " (cols {cols})", levels_x: " \u00d7 {n} levels",
+    pad_sym: "\u00b1{v} mm",
+    pad_lr: "L: {l} mm / R: {r} mm",
+    pad_bt: "Bottom: {b} mm / Top: {t} mm",
+    btn_exact_on: "\u2713 Edge padding active (exact {x} \u00d7 {y} mm)",
+    btn_exact_off: "Add edge padding for exact size (+{x}\u00d7{y} mm)",
+    fits_units: "Fits {x} \u00d7 {y} units ({mx} \u00d7 {my} mm)",
+    fits_buffer: "Fits {x} \u00d7 {y} units + buffer (X: {xd}, Y: {yd}) = exact {ox} \u00d7 {oy} mm",
+    render_failed: "Render failed: {e}", export_failed: "Export failed: {e}",
+    saved_import: "Written to {p} \u2014 import it with File \u203a Import.",
+    saved_pending: "Written to {p} \u2014 adding to the build plate\u2026",
+    placed_ok: "Added to the build plate: {p}",
+    placed_fail: "Written to {p} \u2014 could not add it to the plate: {e}",
+    save_failed: "Could not write the STL: {e}",
+    asking_bed: "asking OrcaSlicer\u2026", bed_failed: "could not read the printer bed",
+    bed_manual: "Bed size: {e} \u2014 set Bed X/Y by hand.",
+    bed_from: "{printer}: {x} \u00d7 {y} mm",
+    gl_missing: "WebGL is unavailable, so the 3D view cannot be shown. The settings, the OpenSCAD command and STL export still work.",
+    gl_error: "Renderer error: {e}"
+  },
+  ru: {
+    title: "Gridfinity \u2014 конструктор ящиков",
+    h_model: "Модель", m_bin: "Ящик", m_plate: "Основание",
+    h_binsize: "Размер ящика", l_width: "Ширина", l_depth: "Глубина", l_height: "Высота",
+    h_platesize: "Размер основания", pm_units: "Сетка (юниты)", pm_mm: "Размеры (мм)",
+    l_width_mm: "Ширина (мм)", l_depth_mm: "Глубина (мм)", l_depth_mm2: "Глубина (мм)", l_width_mm2: "Ширина (мм)",
+    l_buf_x: "Лево \u27f7 Право", l_buf_y: "Низ \u27f7 Верх",
+    h_plateopts: "Параметры основания",
+    l_plate_base: "Сплошное дно (мм)", l_plate_r: "Радиус углов",
+    l_bed_x: "Стол X (мм)", l_bed_y: "Стол Y (мм)", l_plate_gap: "Раздвижка деталей",
+    btn_bed: "Стол принтера", conn: "Puzzle-замки",
+    stacking_h: "Стопка копий", stacking_on: "Штабелировать копии вверх",
+    stacking_copies: "Копий", stacking_gap: "Зазор между копиями (мм)",
+    stacking_hint: "Каждая вторая копия уложена вверх дном (сокетами вниз); зазор не даёт копиям слипнуться.",
+    h_comps: "Отсеки", cl_grid: "Равномерно", cl_rows: "По строкам", cl_cols: "По столбцам",
+    l_dx: "По X", l_dy: "По Y", l_num_rows: "Всего строк", l_num_cols: "Всего столбцов",
+    row_n: "Строка {n}", col_n: "Столбец {n}", pos_front: " (перед)", pos_back: " (зад)", pos_left: " (лево)", pos_right: " (право)",
+    h_features: "Особенности",
+    f_lip: "Стыковочный борт", f_scoop: "Выемка под палец", l_radius_mm: "Радиус (мм)",
+    f_label: "Площадка для этикетки", label_full_w: "0 = вся ширина отсека",
+    f_mag: "Отверстия под магниты (6&times;2&nbsp;мм)", f_screw: "Отверстия под шурупы (M3)",
+    h_advanced: "Дополнительно", l_wall: "Стенка (мм)", l_floor: "Дно (мм)", l_fillet: "Внутр. скругление",
+    h_result: "Результат", s_foot_l: "Габарит", s_tall_l: "Общая высота",
+    s_comp_l: "Отсек", s_depth_l: "Глубина отсека", s_tris_l: "Треугольников",
+    h_output: "Экспорт", btn_render: "Построить", btn_stl: "Экспорт STL",
+    to_plate: "Добавить на стол после экспорта",
+    v_iso: "Изо", v_front: "Спереди", v_top: "Сверху", v_under: "Снизу",
+    hint: "перетаскивание \u2014 поворот &middot; колесо \u2014 масштаб &middot; Shift \u2014 сдвиг",
+    badge_preview: "Просмотр", badge_rendering: "Строю\u2026", badge_rendered: "Готово",
+    prog_building: "Построение", prog_encoding: "Кодирование", prog_writing: "Запись STL",
+    prog_saving: "Сохранение", prog_sending: "Передача в OrcaSlicer",
+    prog_done: "Готово", prog_failed: "Ошибка", prog_sent: "Отправлено", prog_saved: "Сохранено",
+    mm: "мм",
+    body_of: " (корпус {h})",
+    no_comps: "0 отсеков",
+    comp_one: "1 ({w} \u00d7 {d} мм)",
+    comp_rows: "{n} в {r} строках ({divs})",
+    comp_cols: "{n} в {c} столбцах ({divs})",
+    comp_plain: "{n} ({w} \u00d7 {d} мм)",
+    warn_invalid: "При таких настройках отсеки не помещаются.",
+    warn_shallow: "Отсеки мельче 2 мм \u2014 увеличьте высоту.",
+    cells: "{x} \u00d7 {y} ячеек",
+    plus_buffer: " + буфер (точно {x} \u00d7 {y} мм)",
+    target_mm: " (цель {x} \u00d7 {y} мм)",
+    piece_one: "{n} деталь", piece_many: "{n} деталей",
+    cols_split: " (столбцы: {cols})", levels_x: " \u00d7 {n} ярусов",
+    pad_sym: "\u00b1{v} мм",
+    pad_lr: "Л: {l} мм / П: {r} мм",
+    pad_bt: "Низ: {b} мм / Верх: {t} мм",
+    btn_exact_on: "\u2713 Поле включено (точно {x} \u00d7 {y} мм)",
+    btn_exact_off: "Добавить поле до точного размера (+{x}\u00d7{y} мм)",
+    fits_units: "Помещается {x} \u00d7 {y} юнитов ({mx} \u00d7 {my} мм)",
+    fits_buffer: "Помещается {x} \u00d7 {y} юнитов + буфер (X: {xd}, Y: {yd}) = точно {ox} \u00d7 {oy} мм",
+    render_failed: "Ошибка построения: {e}", export_failed: "Ошибка экспорта: {e}",
+    saved_import: "Записано в {p} \u2014 импортируйте через Файл \u203a Импорт.",
+    saved_pending: "Записано в {p} \u2014 добавляю на стол\u2026",
+    placed_ok: "Добавлено на стол: {p}",
+    placed_fail: "Записано в {p} \u2014 не удалось добавить на стол: {e}",
+    save_failed: "Не удалось записать STL: {e}",
+    asking_bed: "запрашиваю OrcaSlicer\u2026", bed_failed: "не удалось прочитать стол принтера",
+    bed_manual: "Размер стола: {e} \u2014 задайте X/Y вручную.",
+    bed_from: "{printer}: {x} \u00d7 {y} мм",
+    gl_missing: "WebGL недоступен, 3D-просмотр невозможен. Настройки и экспорт STL продолжают работать.",
+    gl_error: "Ошибка рендера: {e}"
+  }
+};
+
+var LANG = "en";
+try {
+  LANG = localStorage.getItem("gf_lang") ||
+         (((navigator.language || "en").toLowerCase().indexOf("ru") === 0) ? "ru" : "en");
+} catch (e) {
+  LANG = ((navigator.language || "en").toLowerCase().indexOf("ru") === 0) ? "ru" : "en";
+}
+if (!I18N[LANG]) LANG = "en";
+
+function t(key, vars) {
+  var s = (I18N[LANG] && I18N[LANG][key] !== undefined) ? I18N[LANG][key] : I18N.en[key];
+  if (s === undefined) return key;
+  if (vars) for (var k in vars) s = s.split("{" + k + "}").join(vars[k]);
+  return s;
+}
+/* Russian plural: 1 деталь / 2 детали / 5 деталей; EN: 1 piece / 2 pieces */
+function pieceTxt(n) {
+  if (LANG === "ru") {
+    var m10 = n % 10, m100 = n % 100;
+    var word = (m10 === 1 && m100 !== 11) ? "деталь"
+             : (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) ? "детали" : "деталей";
+    var lvl = (m10 === 1 && m100 !== 11) ? "ярус"
+            : (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) ? "яруса" : "ярусов";
+    return { piece: n + " " + word, level: n + " " + lvl };
+  }
+  return { piece: n + (n === 1 ? " piece" : " pieces"), level: n + (n === 1 ? " level" : " levels") };
+}
+
+function applyLang() {
+  document.documentElement.lang = LANG;
+  document.title = t("title");
+  var nodes = document.querySelectorAll("[data-i]");
+  for (var i = 0; i < nodes.length; i++) {
+    var el = nodes[i];
+    var v = I18N[LANG][el.getAttribute("data-i")];
+    if (v === undefined) v = I18N.en[el.getAttribute("data-i")];
+    if (v !== undefined) el.innerHTML = v;
+  }
+  var rEN = document.getElementById("lang_en"), rRU = document.getElementById("lang_ru");
+  if (rEN) rEN.checked = LANG === "en";
+  if (rRU) rRU.checked = LANG === "ru";
+  var lEN = document.getElementById("lbl_lang_en"), lRU = document.getElementById("lbl_lang_ru");
+  if (lEN) lEN.className = LANG === "en" ? "active" : "";
+  if (lRU) lRU.className = LANG === "ru" ? "active" : "";
+  renderRowList();
+  renderColList();
+  readControls();
+  updateReadout();
+}
 
 /* =====================================================================
    Renderer
@@ -2284,7 +2540,7 @@ var bedFrom = null;
 
 function frameCamera() {
   var d = P.mode === "plate" ? derivePlate(P) : derive(P);
-  var top = P.mode === "plate" ? d.H : d.TOP;
+  var top = P.mode === "plate" ? d.HTotal : d.TOP;
   cam.target = [0, 0, top * 0.42];
   cam.dist = Math.max(d.OX, d.OY, top) * 2.0 + 55;
   needsDraw = true;
@@ -2377,10 +2633,11 @@ var P = Object.assign({}, DEFAULTS, {
   buf_y_ratio: 50,
   labelW: 0,
   plateBase: 0, plateR: 4,
-  bedX: 250, bedY: 220, plateGap: 0, plateConnectors: true
+  bedX: 250, bedY: 220, plateGap: 0, plateConnectors: true,
+  plateStack: false, plateStackN: 2, plateStackGap: 0.2
 });
-var FLOATS = ["wall","floorT","scoopR","labelD","labelW","fillet","plateBase","plateR","bedX","bedY","plateGap"];
-var BOOLS = ["lip","scoop","label","mag","screw","plateConnectors"];
+var FLOATS = ["wall","floorT","scoopR","labelD","labelW","fillet","plateBase","plateR","bedX","bedY","plateGap","plateStackGap"];
+var BOOLS = ["lip","scoop","label","mag","screw","plateConnectors","plateStack"];
 var lastTris = 0;
 
 function mmToUnits(mm) {
@@ -2416,7 +2673,8 @@ function renderRowList() {
     (function(rowIndex) {
       var item = document.createElement("div");
       item.className = "dyn-item";
-      var lblText = "Row " + (rowIndex + 1) + (rowIndex === 0 ? " (Front)" : rowIndex === nr - 1 ? " (Back)" : "");
+      var lblText = t("row_n", { n: rowIndex + 1 }) +
+        (rowIndex === 0 ? t("pos_front") : rowIndex === nr - 1 ? t("pos_back") : "");
       item.innerHTML = '<label>' + lblText + '</label>' +
         '<input type="range" min="1" max="8" step="1" value="' + Math.min(8, P.row_divs[rowIndex]) + '">' +
         '<input type="number" min="1" max="50" step="1" value="' + P.row_divs[rowIndex] + '">';
@@ -2470,7 +2728,8 @@ function renderColList() {
     (function(colIndex) {
       var item = document.createElement("div");
       item.className = "dyn-item";
-      var lblText = "Col " + (colIndex + 1) + (colIndex === 0 ? " (Left)" : colIndex === nc - 1 ? " (Right)" : "");
+      var lblText = t("col_n", { n: colIndex + 1 }) +
+        (colIndex === 0 ? t("pos_left") : colIndex === nc - 1 ? t("pos_right") : "");
       item.innerHTML = '<label>' + lblText + '</label>' +
         '<input type="range" min="1" max="8" step="1" value="' + Math.min(8, P.col_divs[colIndex]) + '">' +
         '<input type="number" min="1" max="50" step="1" value="' + P.col_divs[colIndex] + '">';
@@ -2606,6 +2865,7 @@ function readControls() {
 
     P.buf_x_ratio = getVal("buf_x_ratio", "buf_x_ratio_num", 100, 0);
     P.buf_y_ratio = getVal("buf_y_ratio", "buf_y_ratio_num", 100, 0);
+    P.plateStackN = getVal("plateStackN", "plateStackN_num", 10, 2);
 
     var alignBox = document.getElementById("plateBufferAlignOpts");
     if (alignBox) alignBox.hidden = !(P.plateExact && isMm);
@@ -2615,23 +2875,23 @@ function readControls() {
     if (btnExact) {
       if (P.plateExact && isMm && (dp.padLeft > 0 || dp.padRight > 0 || dp.padBottom > 0 || dp.padTop > 0)) {
         btnExact.className = "primary";
-        btnExact.textContent = "✓ Edge padding active (exact " + fmt(dp.OX) + " × " + fmt(dp.OY) + " mm)";
+        btnExact.textContent = t("btn_exact_on", { x: fmt(dp.OX), y: fmt(dp.OY) });
       } else {
         btnExact.className = "";
         var remX = Math.max(0, Math.round((P.plate_mm_x - P.plate_gx * GRID) * 10) / 10);
         var remY = Math.max(0, Math.round((P.plate_mm_y - P.plate_gy * GRID) * 10) / 10);
-        btnExact.textContent = "Add edge padding for exact size (+" + remX + "×" + remY + " mm)";
+        btnExact.textContent = t("btn_exact_off", { x: remX, y: remY });
       }
     }
 
     var fitInfo = document.getElementById("plateFitInfo");
     if (fitInfo) {
       if (P.plateExact && isMm && (dp.padLeft > 0 || dp.padRight > 0 || dp.padBottom > 0 || dp.padTop > 0)) {
-        var xDesc = dp.padLeft === dp.padRight ? ("±" + fmt(dp.padLeft) + " mm") : ("L: " + fmt(dp.padLeft) + " mm / R: " + fmt(dp.padRight) + " mm");
-        var yDesc = dp.padBottom === dp.padTop ? ("±" + fmt(dp.padBottom) + " mm") : ("Bottom: " + fmt(dp.padBottom) + " mm / Top: " + fmt(dp.padTop) + " mm");
-        fitInfo.textContent = "Fits " + P.plate_gx + " × " + P.plate_gy + " units + buffer (X: " + xDesc + ", Y: " + yDesc + ") = exact " + fmt(dp.OX) + " × " + fmt(dp.OY) + " mm";
+        var xDesc = dp.padLeft === dp.padRight ? t("pad_sym", { v: fmt(dp.padLeft) }) : t("pad_lr", { l: fmt(dp.padLeft), r: fmt(dp.padRight) });
+        var yDesc = dp.padBottom === dp.padTop ? t("pad_sym", { v: fmt(dp.padBottom) }) : t("pad_bt", { b: fmt(dp.padBottom), t: fmt(dp.padTop) });
+        fitInfo.textContent = t("fits_buffer", { x: P.plate_gx, y: P.plate_gy, xd: xDesc, yd: yDesc, ox: fmt(dp.OX), oy: fmt(dp.OY) });
       } else {
-        fitInfo.textContent = "Fits " + P.plate_gx + " × " + P.plate_gy + " units (" + fmt(P.plate_gx * GRID) + " × " + fmt(P.plate_gy * GRID) + " mm)";
+        fitInfo.textContent = t("fits_units", { x: P.plate_gx, y: P.plate_gy, mx: fmt(P.plate_gx * GRID), my: fmt(P.plate_gy * GRID) });
       }
     }
 
@@ -2659,6 +2919,10 @@ function readControls() {
     var el = document.getElementById(k);
     if (el) P[k] = el.checked;
   });
+
+  // visibility follows the freshly read state, so a single change event is enough
+  var stackOpts = document.getElementById("stackOpts");
+  if (stackOpts) stackOpts.hidden = !P.plateStack;
 }
 
 var fmt = function (n) { return (Math.round(n * 100) / 100).toString(); };
@@ -2669,7 +2933,7 @@ function applyMesh(res, q) {
   uploadGround(Math.max(res.derived.OX, res.derived.OY) * 6 + 400);
   lastTris = res.mesh.count();
   document.getElementById("s_tris").textContent = lastTris.toLocaleString();
-  badge.textContent = q === "render" ? "Rendered" : "Preview";
+  badge.textContent = q === "render" ? t("badge_rendered") : t("badge_preview");
   badge.className = q === "render" ? "badge hi" : "badge";
   needsDraw = true;
 }
@@ -2684,48 +2948,54 @@ function rebuild(q) {
 function updateReadout() {
   if (P.mode === "plate") return updatePlateReadout();
   var d = derive(P);
-  document.getElementById("s_foot").textContent = fmt(d.OX) + " × " + fmt(d.OY) + " mm";
+  var MM = t("mm");
+  document.getElementById("s_foot").textContent = fmt(d.OX) + " × " + fmt(d.OY) + " " + MM;
   document.getElementById("s_tall").textContent =
-    fmt(d.TOP) + " mm" + (P.lip ? " (body " + fmt(d.H_BODY) + ")" : "");
+    fmt(d.TOP) + " " + MM + (P.lip ? t("body_of", { h: fmt(d.H_BODY) }) : "");
 
   var compText = "";
   if (!d.cells || d.cells.length === 0) {
-    compText = "0 compartments";
+    compText = t("no_comps");
   } else if (d.cells.length === 1) {
-    compText = "1 (" + fmt(d.cells[0].cw) + " × " + fmt(d.cells[0].cd) + " mm)";
+    compText = t("comp_one", { w: fmt(d.cells[0].cw), d: fmt(d.cells[0].cd) });
   } else if (P.comp_layout === "rows") {
-    compText = d.cells.length + " in " + P.num_rows + " rows (" + (P.row_divs || []).join(", ") + ")";
+    compText = t("comp_rows", { n: d.cells.length, r: P.num_rows, divs: (P.row_divs || []).join(", ") });
   } else if (P.comp_layout === "cols") {
-    compText = d.cells.length + " in " + P.num_cols + " cols (" + (P.col_divs || []).join(", ") + ")";
+    compText = t("comp_cols", { n: d.cells.length, c: P.num_cols, divs: (P.col_divs || []).join(", ") });
   } else {
-    compText = d.cells.length + " (" + fmt(d.cells[0].cw) + " × " + fmt(d.cells[0].cd) + " mm)";
+    compText = t("comp_plain", { n: d.cells.length, w: fmt(d.cells[0].cw), d: fmt(d.cells[0].cd) });
   }
   document.getElementById("s_comp").textContent = compText;
-  document.getElementById("s_depth").textContent = fmt(d.depth) + " mm";
+  document.getElementById("s_depth").textContent = fmt(d.depth) + " " + MM;
   var warn = document.getElementById("s_warn"), msgs = [];
-  if (!d.valid) msgs.push("These settings leave no usable compartment.");
-  else if (d.depth < 2) msgs.push("Compartments are under 2 mm deep — raise the height.");
+  if (!d.valid) msgs.push(t("warn_invalid"));
+  else if (d.depth < 2) msgs.push(t("warn_shallow"));
   warn.hidden = msgs.length === 0;
   warn.textContent = msgs.join(" ");
 }
 
 function updatePlateReadout() {
   var d = derivePlate(P);
-  document.getElementById("s_foot").textContent = fmt(d.OX) + " × " + fmt(d.OY) + " mm";
-  document.getElementById("s_tall").textContent = fmt(d.H) + " mm";
-  var sizeText = P.gx + " × " + P.gy + " cells";
+  var MM = t("mm");
+  document.getElementById("s_foot").textContent = fmt(d.OX) + " × " + fmt(d.OY) + " " + MM;
+  document.getElementById("s_tall").textContent =
+    fmt(d.HTotal) + " " + MM +
+    (d.levels > 1 ? " (" + pieceTxt(d.levels).level + " × " + fmt(d.H) + " " + MM + ")" : "");
+  var sizeText = t("cells", { x: P.gx, y: P.gy });
   if (P.plate_size_mode === "mm") {
     if (d.padLeft > 0 || d.padRight > 0 || d.padBottom > 0 || d.padTop > 0) {
-      sizeText += " + buffer (exact " + fmt(d.OX) + " × " + fmt(d.OY) + " mm)";
+      sizeText += t("plus_buffer", { x: fmt(d.OX), y: fmt(d.OY) });
     } else {
-      sizeText += " (target " + P.plate_mm_x + " × " + P.plate_mm_y + " mm)";
+      sizeText += t("target_mm", { x: P.plate_mm_x, y: P.plate_mm_y });
     }
   }
   document.getElementById("s_comp").textContent = sizeText;
   var pl = planPlate(P), np = 0, sx;
   for (sx = 0; sx < pl.cols.length; sx++) np += pl.rows[sx % 2].length;
+  var total = np * d.levels;
   document.getElementById("s_depth").textContent =
-    np + (np === 1 ? " piece" : " pieces") + "  (" + pl.cols.join("+") + " cols)";
+    pieceTxt(total).piece + t("cols_split", { cols: pl.cols.join("+") }) +
+    (d.levels > 1 ? t("levels_x", { n: d.levels }) : "");
   document.getElementById("s_warn").hidden = true;
 }
 
@@ -2760,6 +3030,10 @@ function stem() {
       if (P.buf_x_ratio !== 50) alignSuffix += "_x" + P.buf_x_ratio;
       if (P.buf_y_ratio !== 50) alignSuffix += "_y" + P.buf_y_ratio;
       return "gridfinity_baseplate_" + P.gx + "x" + P.gy + "_exact_" + Math.round(dp.OX) + "x" + Math.round(dp.OY) + "mm" + alignSuffix;
+    }
+    if (P.plateStack) {
+      var gapTxt = (Math.round(Math.max(0, +P.plateStackGap || 0) * 100) / 100).toString();
+      return "gridfinity_baseplate_" + P.gx + "x" + P.gy + "_stack" + d.levels + "_g" + gapTxt;
     }
     return "gridfinity_baseplate_" + P.gx + "x" + P.gy;
   }
@@ -2807,7 +3081,8 @@ var SLIDERS = [
   { id: "buf_y_ratio", num: "buf_y_ratio_num", refit: true },
   { id: "scoopR", num: "scoopR_num", refit: false },
   { id: "labelD", num: "labelD_num", refit: false },
-  { id: "labelW", num: "labelW_num", refit: false }
+  { id: "labelW", num: "labelW_num", refit: false },
+  { id: "plateStackN", num: "plateStackN_num", refit: true }
 ];
 
 SLIDERS.forEach(function (s) {
@@ -2848,7 +3123,7 @@ SLIDERS.forEach(function (s) {
 FLOATS.concat(BOOLS).forEach(function (k) {
   var el = document.getElementById(k);
   if (!el) return;
-  var refit = k === "lip" || k === "plateR";
+  var refit = k === "lip" || k === "plateR" || k === "plateStack" || k === "plateStackGap";
   el.addEventListener("input", function () { onChange(refit); });
   el.addEventListener("change", function () { onChange(refit); });
 });
@@ -2864,6 +3139,16 @@ if (btnExact) {
 ["mode_bin", "mode_plate", "layout_grid", "layout_rows", "layout_cols", "plate_mode_units", "plate_mode_mm"].forEach(function (id) {
   var el = document.getElementById(id);
   if (el) el.addEventListener("change", function () { onChange(id.startsWith("mode") || id.startsWith("plate_mode")); });
+});
+
+/* ---- language switch (EN / RU) ---- */
+["lang_en", "lang_ru"].forEach(function (id) {
+  var el = document.getElementById(id);
+  if (el) el.addEventListener("change", function () {
+    LANG = el.value;
+    try { localStorage.setItem("gf_lang", LANG); } catch (e) {}
+    applyLang();
+  });
 });
 
 document.querySelectorAll(".views button").forEach(function (b) {
@@ -2922,7 +3207,7 @@ function defer(fn) { setTimeout(fn, 0); }
 function buildAsync(p, seg, base, span, done, fail) {
   var sig = meshSig(p, seg);
   if (renderCache && renderCache.sig === sig) {
-    progSet("Building", base + span);
+    progSet(t("prog_building"), base + span);
     return defer(function () { done(renderCache.res); });
   }
   var gen = p.mode === "plate" ? plateSteps(p, seg) : binSteps(p, seg);
@@ -2935,7 +3220,7 @@ function buildAsync(p, seg, base, span, done, fail) {
           renderCache = { sig: sig, res: r.value };
           return done(r.value);
         }
-        progSet("Building", base + span * r.value);
+        progSet(t("prog_building"), base + span * r.value);
         if (++n >= SLICE_MAX || performance.now() > until) return defer(pump);
       }
     } catch (e) { fail(e); }
@@ -2953,7 +3238,7 @@ function encodeAsync(buf, base, span, done, fail) {
         parts.push(btoa(String.fromCharCode.apply(null, b.subarray(i, i + CH))));
         i += CH;
         if (++n >= CHUNK_MAX || performance.now() > until) {
-          progSet("Encoding", base + span * (i / b.length));
+          progSet(t("prog_encoding"), base + span * (i / b.length));
           return defer(pump);
         }
       }
@@ -2964,17 +3249,17 @@ function encodeAsync(buf, base, span, done, fail) {
 
 btnRender.addEventListener("click", function () {
   btnRender.disabled = true; btnStl.disabled = true;
-  badge.textContent = "Rendering\u2026";
+  badge.textContent = t("badge_rendering");
   badge.className = "badge";
-  progShow("Building");
+  progShow(t("prog_building"));
   buildAsync(P, RENDER_SEG, 0, 1, function (res) {
     applyMesh(res, "render");
-    progDone("Rendered");
+    progDone(t("prog_done"));
     btnRender.disabled = false; btnStl.disabled = false;
   }, function (e) {
-    badge.textContent = "Preview";
-    progDone("Failed");
-    note("Render failed: " + e.message, true);
+    badge.textContent = t("badge_preview");
+    progDone(t("prog_failed"));
+    note(t("render_failed", { e: e.message }), true);
     btnRender.disabled = false; btnStl.disabled = false;
   });
 });
@@ -2984,11 +3269,11 @@ btnStl.addEventListener("click", function () {
   var t0 = performance.now(), name = stem() + ".stl";
   btnStl.disabled = true; btnRender.disabled = true;
   note("", false);
-  progShow("Building");
+  progShow(t("prog_building"));
 
   function failed(e) {
-    progDone("Failed");
-    note("Export failed: " + e.message, true);
+    progDone(t("prog_failed"));
+    note(t("export_failed", { e: e.message }), true);
     btnStl.disabled = false; btnRender.disabled = false;
   }
   function finished(stage) {
@@ -2997,12 +3282,12 @@ btnStl.addEventListener("click", function () {
   }
 
   buildAsync(P, RENDER_SEG, 0, 0.8, function (res) {
-    progSet("Writing STL", 0.8);
+    progSet(t("prog_writing"), 0.8);
     defer(function () {
       var buf;
       try { buf = toSTL(res.mesh); } catch (e) { return failed(e); }
       if (!ORCA) {
-        progSet("Saving", 0.95);
+        progSet(t("prog_saving"), 0.95);
         defer(function () {
           try {
             var url = URL.createObjectURL(new Blob([buf], { type: "model/stl" }));
@@ -3011,12 +3296,12 @@ btnStl.addEventListener("click", function () {
             document.body.appendChild(a); a.click(); a.remove();
             setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
           } catch (e) { return failed(e); }
-          finished("Saved");
+          finished(t("prog_saved"));
         });
         return;
       }
       encodeAsync(buf, 0.85, 0.13, function (b64) {
-        progSet("Handing to OrcaSlicer", 0.98);
+        progSet(t("prog_sending"), 0.98);
         defer(function () {
           try {
             ORCA.postMessage({
@@ -3024,7 +3309,7 @@ btnStl.addEventListener("click", function () {
               place: document.getElementById("toPlate").checked
             });
           } catch (e) { return failed(e); }
-          finished("Sent");
+          finished(t("prog_sent"));
         });
       }, failed);
     });
@@ -3051,7 +3336,7 @@ function applyBed(m) {
     mmY.value = Math.min(+mmY.max || 600, m.y);
     mmYNum.value = m.y;
   }
-  bedFrom.textContent = m.printer + ": " + m.x + " \u00d7 " + m.y + " mm";
+  bedFrom.textContent = t("bed_from", { printer: m.printer, x: m.x, y: m.y });
   onChange(false);
 }
 
@@ -3064,7 +3349,7 @@ function applyBed(m) {
 
 if (ORCA) {
   document.getElementById("btnBed").addEventListener("click", function () {
-    bedFrom.textContent = "asking OrcaSlicer\u2026";
+    bedFrom.textContent = t("asking_bed");
     ORCA.postMessage({ type: "get_bed" });
   });
   ORCA.postMessage({ type: "get_bed" });
@@ -3075,20 +3360,17 @@ if (ORCA && typeof ORCA.onMessage === "function") {
     if (!m) return;
     if (m.type === "bed") applyBed(m);
     if (m.type === "bed_failed") {
-      bedFrom.textContent = "could not read the printer bed";
-      note("Bed size: " + m.error + " \u2014 set Bed X/Y by hand.", true);
+      bedFrom.textContent = t("bed_failed");
+      note(t("bed_manual", { e: m.error }), true);
     }
     if (m.type === "saved") {
-      note("Written to " + m.path +
-           (m.pending ? " — adding to the build plate…"
-                      : " — import it with File \u203a Import."), true);
+      note(t(m.pending ? "saved_pending" : "saved_import", { p: m.path }), true);
     }
     if (m.type === "placed") {
-      note(m.placed ? "Added to the build plate: " + m.path
-                    : "Written to " + m.path +
-                      " — could not add it to the plate: " + m.place_error, true);
+      note(m.placed ? t("placed_ok", { p: m.path })
+                    : t("placed_fail", { p: m.path, e: m.place_error }), true);
     }
-    if (m.type === "save_failed") note("Could not write the STL: " + m.error, true);
+    if (m.type === "save_failed") note(t("save_failed", { e: m.error }), true);
   });
 }
 
@@ -3135,12 +3417,12 @@ window.addEventListener("resize", function () { needsDraw = true; });
 darkMQ.addEventListener("change", function () { needsDraw = true; });
 
 /* ---- go ---- */
+applyLang();
 renderRowList();
 renderColList();
 if (!gl) {
   errBox.hidden = false;
-  errBox.textContent = "WebGL is unavailable, so the 3D view cannot be shown. " +
-    "The settings, the OpenSCAD command and STL export still work.";
+  errBox.textContent = t("gl_missing");
   canvas.style.display = "none";
   readControls(); updateReadout();
 } else {
@@ -3153,7 +3435,7 @@ if (!gl) {
     loop();
   } catch (e) {
     errBox.hidden = false;
-    errBox.textContent = "Renderer error: " + e.message;
+    errBox.textContent = t("gl_error", { e: e.message });
     canvas.style.display = "none";
   }
 }
