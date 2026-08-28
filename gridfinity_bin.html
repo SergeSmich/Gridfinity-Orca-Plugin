@@ -802,6 +802,87 @@ function earClip(poly) {
   return tris;
 }
 
+/* O(n^3) interval-DP triangulation: the safety net for polygons where
+   the ear clipper's fan comes out short (the coverage check above calls
+   it).  visible() = the segment midpoint is inside the polygon and the
+   segment crosses no edge. */
+function triangulateDP(poly) {
+  var n = poly.length;
+  if (n < 3) return [];
+  function ptIn(p) {
+    var inside = false, i, j;
+    for (i = 0, j = n - 1; i < n; j = i++)
+      if (((poly[i][1] > p[1]) !== (poly[j][1] > p[1])) &&
+          (p[0] < (poly[j][0] - poly[i][0]) * (p[1] - poly[i][1]) /
+                  (poly[j][1] - poly[i][1]) + poly[i][0]))
+        inside = !inside;
+    return inside;
+  }
+  function cross(o, a, b) {
+    return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  }
+  function segCross(p1, p2, q1, q2) {
+    var d1 = cross(q1, q2, p1), d2 = cross(q1, q2, p2);
+    var d3 = cross(p1, p2, q1), d4 = cross(p1, p2, q2);
+    return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0));
+  }
+  function segOK(i, j) {                 /* no edge strictly crosses (i,j) */
+    for (var k = 0; k < n; k++) {
+      var k2 = (k + 1) % n;
+      if (k === i || k2 === i || k === j || k2 === j) continue;
+      if (segCross(poly[i], poly[j], poly[k], poly[k2])) return false;
+    }
+    return true;
+  }
+  function visible(i, j) {               /* strictly inside: midpoint test */
+    if (poly[i][0] === poly[j][0] && poly[i][1] === poly[j][1]) return false;
+    var mid = [(poly[i][0] + poly[j][0]) / 2, (poly[i][1] + poly[j][1]) / 2];
+    return ptIn(mid) && segOK(i, j);
+  }
+  var dp = [], bk = [], i, j, k;
+  for (i = 0; i < n; i++) { dp.push([]); bk.push([]); }
+  for (var gap = 1; gap < n; gap++)
+    for (i = 0; i + gap < n; i++) {
+      j = i + gap;
+      if (gap < 2) { dp[i][j] = 0; continue; }
+      dp[i][j] = Infinity;
+      for (k = i + 1; k < j; k++) {
+        var tri = [poly[i], poly[k], poly[j]];
+        var a = Math.abs(signedArea(tri));
+        if (a < 1e-12) {
+          /* collinear split: a zero-area sliver.  Emit it anyway (the
+             mesh builder drops the degenerate triangle, but every chord
+             still pairs with its neighbours), so straight runs and
+             bridge duplicates can never leave dp at Infinity. */
+          var c0 = dp[i][k] + dp[k][j];
+          if (c0 < dp[i][j] && segOK(i, k) && segOK(k, j)) {
+            dp[i][j] = c0; bk[i][j] = k;
+          }
+          continue;
+        }
+        var cost = dp[i][k] + dp[k][j] + a;
+        if (cost >= dp[i][j]) continue;
+        if (visible(i, k) && visible(k, j) && visible(i, j)) {
+          dp[i][j] = cost; bk[i][j] = k;
+        } else if (dp[i][j] === Infinity && segOK(i, k) && segOK(k, j)) {
+          /* permissive tier: keep the best non-crossing split so the
+             fallback always yields a full fan (the caller only needs
+             coverage; degenerate slivers are dropped downstream) */
+          dp[i][j] = cost + 1e9; bk[i][j] = k;
+        }
+      }
+    }
+  var tris = [];
+  (function rec(i2, j2) {
+    if (j2 - i2 < 2 || bk[i2][j2] === undefined) return;
+    var k2 = bk[i2][j2];
+    tris.push([i2, k2, j2]);
+    rec(i2, k2);
+    rec(k2, j2);
+  })(0, n - 1);
+  return tris;
+}
+
 // outer: CCW. holes: array of loops (any winding). Returns {pts, tris}.
 function triangulate(outer, holes) {
   var poly = signedArea(outer) < 0 ? reverseLoop(outer) : outer.slice();
@@ -829,8 +910,15 @@ function triangulate(outer, holes) {
     var ta = area2(poly[tris[ti][0]], poly[tris[ti][1]], poly[tris[ti][2]]);
     got += Math.abs(ta) / 2;
   }
-  if (tris.length < poly.length - 2 ||
-      Math.abs(got - want) > 1e-6 * Math.max(1, want))
+  if ((tris.length < poly.length - 2 ||
+      Math.abs(got - want) > 1e-6 * Math.max(1, want)) &&
+      !(holes && holes.length))
+    /* Simple polygons get the exact DP fallback.  A bridged cap whose
+       hole sits in a sub-print sliver of the outline (plate sockets
+       0.002 mm from the border) has NO clean triangulation of the
+       bridged loop at all; the ear clipper's fan there is watertight
+       by construction and only locally off by that sliver, so it
+       stays. */
     tris = triangulateDP(poly);
   return { pts: poly, tris: tris };
 }
@@ -897,80 +985,6 @@ function bridgeHole(poly, hole) {
              .concat(rot, [rot[0]], [poly[target]], poly.slice(target + 1));
 }
 
-function earClip(poly) {
-  var n = poly.length;
-  if (n < 3) return [];
-  var idx = [], i;
-  for (i = 0; i < n; i++) idx.push(i);
-  var tris = [], relax = 0;
-
-  while (idx.length > 3) {
-    var m = idx.length, found = -1, bestArea = 0;
-    for (var k = 0; k < m; k++) {
-      var i0 = idx[(k - 1 + m) % m], i1 = idx[k], i2 = idx[(k + 1) % m];
-      var a = poly[i0], b = poly[i1], c = poly[i2];
-      var ar = area2(a, b, c);
-      if (ar <= 1e-10) continue;
-      var ok = true;
-      if (relax === 0) {
-        var ab = Math.hypot(b[0] - a[0], b[1] - a[1]);
-        var bc = Math.hypot(c[0] - b[0], c[1] - b[1]);
-        var ca = Math.hypot(a[0] - c[0], a[1] - c[1]);
-        for (var j = 0; j < m; j++) {
-          var t = idx[j];
-          if (t === i0 || t === i1 || t === i2) continue;
-          var q = poly[t];
-          // a duplicated bridge vertex sits exactly on a corner: not a blocker
-          if (samePt(q, a) || samePt(q, b) || samePt(q, c)) continue;
-          var d1 = area2(a, b, q), d2 = area2(b, c, q), d3 = area2(c, a, q);
-          if (d1 >= -1e-12 && d2 >= -1e-12 && d3 >= -1e-12) {
-            // a point lying ON an ear edge does not block the ear
-            var h = Math.min(Math.abs(d1) / (ab || 1),
-                             Math.abs(d2) / (bc || 1),
-                             Math.abs(d3) / (ca || 1));
-            if (h < 1e-7) continue;
-            ok = false;
-            break;
-          }
-        }
-      }
-      if (!ok) continue;
-      if (relax === 0) { found = k; break; }
-      if (ar > bestArea) { bestArea = ar; found = k; }
-    }
-    if (found < 0) {
-      if (relax === 0) { relax = 1; continue; }   // retry ignoring containment
-      break;                                      // unrecoverable
-    }
-    var mm = idx.length;
-    tris.push([idx[(found - 1 + mm) % mm], idx[found], idx[(found + 1) % mm]]);
-    idx.splice(found, 1);
-    relax = 0;
-  }
-  if (idx.length === 3) tris.push([idx[0], idx[1], idx[2]]);
-  return tris;
-}
-
-// outer: CCW. holes: array of loops (any winding). Returns {pts, tris}.
-function triangulate(outer, holes) {
-  var poly = signedArea(outer) < 0 ? reverseLoop(outer) : outer.slice();
-  if (holes && holes.length) {
-    var hs = holes.map(function (h) {
-      return signedArea(h) > 0 ? reverseLoop(h) : h.slice();     // holes clockwise
-    });
-    hs.sort(function (A, B) {
-      var ax = Infinity, bx = Infinity, i;
-      for (i = 0; i < A.length; i++) if (A[i][0] < ax) ax = A[i][0];
-      for (i = 0; i < B.length; i++) if (B[i][0] < bx) bx = B[i][0];
-      return ax - bx;
-    });
-    for (var i = 0; i < hs.length; i++) {
-      var next = bridgeHole(poly, hs[i]);
-      if (next) poly = next;
-    }
-  }
-  return { pts: poly, tris: earClip(poly) };
-}
 
 /* =====================================================================
    Mesh accumulation
@@ -2171,11 +2185,18 @@ function ogEmitLevel(p, d, seg) {
     } else {                                    // single cell: corner quarter
       {
       var inw1 = [alive[0].dx, alive[0].dy];
+      /* default outer corner is chamfered at the ID plane (ogstudio
+         default); ogCornerSharp restores the full sharp corner tip */
+      var sharp = !!(p.ogCornerSharp && p.ogCornerSharp[ogNodeKey(nx, ny)]);
       var lvq = [];
       for (var k8 = 0; k8 < ZS.length; k8++) {
         var zq = ZS[k8], bq = BAt(zq);
-        var q = [[ID, 0], [bq, 0], [bq / 2, bq / 2], [0, bq],
-                 [0, ID], [ID / 2, ID / 2]];
+        /* sharp: clean triangle -- the hexagon's midpoint (bq/2, bq/2)
+           is collinear with the hypotenuse and would degenerate a cap */
+        var q = sharp
+          ? [[0, 0], [bq, 0], [0, bq]]
+          : [[ID, 0], [bq, 0], [bq / 2, bq / 2], [0, bq],
+             [0, ID], [ID / 2, ID / 2]];
         var pts2 = q.map(function (t) {
           return [nx + inw1[0] * t[0], ny + inw1[1] * t[1], zq];
         });
@@ -2238,6 +2259,19 @@ function ogFillDiamond(m, nx, ny, T, p, seg, lite, ZS, BAt) {
   function dia(z) {
     var b = BAt(z);
     return [[nx + b, ny], [nx, ny + b], [nx - b, ny], [nx, ny - b]];
+  }
+  /* ogstudio "chamfer" node state: the INNER part of the diamond is
+     cut through at the tile-chamfer plane |x|+|y| = INTERSECT (their
+     buildChamferCut), leaving a diamond ring -- and carrying no bore */
+  if (p.ogChamf && p.ogChamf[ogNodeKey(nx, ny)]) {
+    var idl = [[nx + OG.INTERSECT, ny], [nx, ny + OG.INTERSECT],
+               [nx - OG.INTERSECT, ny], [nx, ny - OG.INTERSECT]];
+    var lvr = [];
+    for (var ir = 0; ir < ZS.length; ir++)
+      lvr.push({ loop: dia(ZS[ir]), z: ZS[ir] });
+    addSolid(m, lvr, [idl], [idl]);
+    addHoleWalls(m, [{ loop: idl, z: 0 }, { loop: idl, z: T }]);
+    return;
   }
   /* clicking a screw hole in the preview toggles it off/on; the node
      key is its position in 28 mm units (nx/ny are node coords) */
@@ -2450,7 +2484,8 @@ function deriveBoard(p) {
   if (p.ogScrews)
     for (ix = 1; ix < W; ix++) for (iy = 1; iy < H; iy++)
       if (nodeClass(ix, iy) === "fill" &&
-          !(p.ogScrewOff && p.ogScrewOff[nodeKey(ix, iy)])) screws++;
+          !(p.ogScrewOff && p.ogScrewOff[nodeKey(ix, iy)]) &&
+          !(p.ogChamf && p.ogChamf[nodeKey(ix, iy)])) screws++;
   var conns = 0;
   if (p.ogConnectors)
     for (ix = 0; ix <= W; ix++) for (iy = 0; iy <= H; iy++)
@@ -2870,7 +2905,7 @@ var I18N = {
     og_back_shrink: "Pocket shrink (mm)", og_back_cs: "Pocket countersink", og_back_cs_deg: "Pocket angle (&deg;)",
     og_conn: "Board-to-board connectors",
     og_hint: "28 mm openGrid lattice; 3 OG tiles = 2 Gridfinity units. Lite = the top 4 mm band of the full board. Click a screw hole in the preview to remove or restore it.",
-    hint_2d: "2D editor: click a screw, a connector or a cell to toggle it. Drag pans, wheel zooms.",
+    hint_2d: "2D editor: click a screw to cycle hole / empty / chamfered ring, a connector or a cell to toggle it, an outer corner to make it sharp or cut. Drag pans, wheel zooms.",
     og_reset: "Reset edits",
     og_reset_done: "Click-edits cleared.",
     saved_fallback: "The chosen folder is blocked by OrcaSlicer's plugin write policy, the file was saved next to the plugin instead: {p}",
@@ -2954,7 +2989,7 @@ var I18N = {
     og_back_shrink: "Уменьшение кармана (мм)", og_back_cs: "Зенковка кармана", og_back_cs_deg: "Угол кармана (&deg;)",
     og_conn: "Коннекторы панель-панель",
     og_hint: "Решётка openGrid 28 мм; 3 тайла OG = 2 юнита Gridfinity. Lite = верхние 4 мм полной доски. Клик по отверстию под винт в превью удаляет или возвращает его.",
-    hint_2d: "Редактор 2D: клик по винту, коннектору или ячейке — удалить/вернуть. Перетаскивание — панорама, колесо — масштаб.",
+    hint_2d: "Редактор 2D: клик по винту — цикл «отверстие / пусто / срез углов», по коннектору или ячейке — удалить/вернуть, по внешнему углу — острый/срезанный. Перетаскивание — панорама, колесо — масштаб.",
     og_reset: "Сбросить правки",
     og_reset_done: "Правки сброшены.",
     saved_fallback: "Выбранная папка запрещена политикой записи плагинов OrcaSlicer, файл сохранён рядом с плагином: {p}",
@@ -3329,7 +3364,7 @@ function exit2D() {
 /* every editable feature of the og board, with its current state */
 function ogEditItems() {
   var d = deriveBoard(P), T = OG.TILE;
-  var items = { W: d.W, H: d.H, cells: [], screws: [], conns: [] };
+  var items = { W: d.W, H: d.H, cells: [], screws: [], conns: [], corners: [] };
   function off(m, k) { return !!(P[m] && P[m][k]); }
   function nodeClass(ix, iy) {
     var nw = ix >= 1 && iy >= 1 && !off("ogCellOff", (ix - 1) + "," + (iy - 1));
@@ -3350,10 +3385,13 @@ function ogEditItems() {
   if (P.ogScrews)
     for (var iy = 1; iy < d.H; iy++)
       for (var ix = 1; ix < d.W; ix++)
-        if (nodeClass(ix, iy) === "fill")
-          items.screws.push({ ix: ix, iy: iy, key: ogNodeKey((ix - d.W / 2) * T, (d.H / 2 - iy) * T),
+        if (nodeClass(ix, iy) === "fill") {
+          var sk = ogNodeKey((ix - d.W / 2) * T, (d.H / 2 - iy) * T);
+          items.screws.push({ ix: ix, iy: iy, key: sk,
             x: (ix - d.W / 2) * T, y: (d.H / 2 - iy) * T,
-            state: off("ogScrewOff", ogNodeKey((ix - d.W / 2) * T, (d.H / 2 - iy) * T)) ? "off" : "on" });
+            state: off("ogChamf", sk) ? "chamfer"
+                 : (off("ogScrewOff", sk) ? "off" : "on") });
+        }
   if (P.ogConnectors)
     for (var i = 0; i <= d.W; i++)
       for (var j = 0; j <= d.H; j++)
@@ -3361,6 +3399,14 @@ function ogEditItems() {
           items.conns.push({ ix: i, iy: j, key: ogNodeKey((i - d.W / 2) * T, (d.H / 2 - j) * T),
             x: (i - d.W / 2) * T, y: (d.H / 2 - j) * T,
             state: off("ogConnOff", ogNodeKey((i - d.W / 2) * T, (d.H / 2 - j) * T)) ? "off" : "on" });
+  for (var ci = 0; ci <= d.W; ci++)
+    for (var cj = 0; cj <= d.H; cj++)
+      if (nodeClass(ci, cj) === "outer") {
+        var ck = ogNodeKey((ci - d.W / 2) * T, (d.H / 2 - cj) * T);
+        items.corners.push({ ix: ci, iy: cj, key: ck,
+          x: (ci - d.W / 2) * T, y: (d.H / 2 - cj) * T,
+          sharp: off("ogCornerSharp", ck) });
+      }
   return items;
 }
 
@@ -3381,6 +3427,13 @@ function pick2DTarget(wx, wy) {
       best = { kind: "conn", d2: d2, key: it.conns[i].key };
   }
   if (best) return best;
+  for (i = 0; i < it.corners.length; i++) {         /* 5 mm */
+    dx = wx - it.corners[i].x; dy = wy - it.corners[i].y;
+    d2 = dx * dx + dy * dy;
+    if (d2 <= 25 && (!best || d2 < best.d2))
+      best = { kind: "corner", d2: d2, key: it.corners[i].key };
+  }
+  if (best) return best;
   var col = Math.floor(wx / OG.TILE + it.W / 2);
   var row = Math.floor(it.H / 2 - wy / OG.TILE);
   if (col >= 0 && col < it.W && row >= 0 && row < it.H)
@@ -3392,9 +3445,23 @@ function pick2D(e) {
   var r = canvas.getBoundingClientRect();
   var t = pick2DTarget(s2wX(e.clientX - r.left), s2wY(e.clientY - r.top));
   if (!t) return;
-  var map = t.kind === "screw" ? "ogScrewOff" : t.kind === "conn" ? "ogConnOff" : "ogCellOff";
-  if (!P[map]) P[map] = {};
-  if (P[map][t.key]) delete P[map][t.key]; else P[map][t.key] = 1;
+  if (t.kind === "screw") {
+    /* ogstudio cycleNode: hole -> bare -> chamfered ring -> hole */
+    if (!P.ogChamf) P.ogChamf = {};
+    if (!P.ogScrewOff) P.ogScrewOff = {};
+    if (!P.ogChamf[t.key] && !P.ogScrewOff[t.key]) P.ogScrewOff[t.key] = 1;
+    else if (P.ogScrewOff[t.key]) { delete P.ogScrewOff[t.key]; P.ogChamf[t.key] = 1; }
+    else delete P.ogChamf[t.key];
+  } else if (t.kind === "corner") {
+    /* ogstudio outer nodes: chamfered (default) <-> sharp corner */
+    if (!P.ogCornerSharp) P.ogCornerSharp = {};
+    if (P.ogCornerSharp[t.key]) delete P.ogCornerSharp[t.key];
+    else P.ogCornerSharp[t.key] = 1;
+  } else {
+    var map = t.kind === "conn" ? "ogConnOff" : "ogCellOff";
+    if (!P[map]) P[map] = {};
+    if (P[map][t.key]) delete P[map][t.key]; else P[map][t.key] = 1;
+  }
   hover2D = null; hoverKey = null;
   onChange(false);
 }
@@ -3420,11 +3487,32 @@ function drawOverlay() {
   }
   for (i = 0; i < it.screws.length; i++) {
     e = it.screws[i];
+    var px = w2sX(e.x), py = w2sY(e.y);
+    if (e.state === "chamfer") {
+      var ro = Math.max(6, 4.2 * editScale), ri = Math.max(3, 2.1 * editScale);
+      c.beginPath();
+      c.moveTo(px, py - ro); c.lineTo(px + ro, py); c.lineTo(px, py + ro); c.lineTo(px - ro, py); c.closePath();
+      c.moveTo(px, py - ri); c.lineTo(px + ri, py); c.lineTo(px, py + ri); c.lineTo(px - ri, py); c.closePath();
+      c.strokeStyle = "rgba(150,100,220,0.95)"; c.lineWidth = 1.5; c.stroke();
+      continue;
+    }
     var rr = Math.max(4, (P.ogScrewD || 4.1) / 2 * editScale);
-    c.beginPath(); c.arc(w2sX(e.x), w2sY(e.y), rr, 0, 6.2832);
+    c.beginPath(); c.arc(px, py, rr, 0, 6.2832);
     if (e.state === "on") { c.fillStyle = "rgba(64,180,110,0.22)"; c.fill();
       c.strokeStyle = "rgba(46,150,92,0.95)"; }
     else { c.strokeStyle = "rgba(224,76,64,0.95)"; c.setLineDash([3, 3]); }
+    c.lineWidth = 1.5; c.stroke(); c.setLineDash([]);
+  }
+  for (i = 0; i < it.corners.length; i++) {
+    e = it.corners[i];
+    var rc = Math.max(6, 4.2 * editScale);
+    var qx = w2sX(e.x), qy = w2sY(e.y);
+    c.beginPath();
+    c.moveTo(qx, qy - rc); c.lineTo(qx + rc, qy);
+    c.lineTo(qx, qy + rc); c.lineTo(qx - rc, qy); c.closePath();
+    if (e.sharp) { c.fillStyle = "rgba(64,180,110,0.25)"; c.fill();
+      c.strokeStyle = "rgba(46,150,92,0.95)"; }
+    else { c.strokeStyle = "rgba(200,160,50,0.95)"; c.setLineDash([3, 3]); }
     c.lineWidth = 1.5; c.stroke(); c.setLineDash([]);
   }
   for (i = 0; i < it.conns.length; i++) {
@@ -3446,7 +3534,8 @@ function drawOverlay() {
       var hx = (+pp[0] + 0.5 - it.W / 2) * T, hy = (it.H / 2 - +pp[1] - 0.5) * T;
       c.strokeRect(w2sX(hx - T / 2), w2sY(hy + T / 2), T * editScale, T * editScale);
     } else {
-      var list = hover2D.kind === "screw" ? it.screws : it.conns;
+      var list = hover2D.kind === "screw" ? it.screws
+               : hover2D.kind === "corner" ? it.corners : it.conns;
       for (i = 0; i < list.length; i++)
         if (list[i].key === hover2D.key) {
           var hr = (hover2D.kind === "screw"
@@ -4000,7 +4089,9 @@ function stem() {
       : "";
     if ((P.ogCellOff && Object.keys(P.ogCellOff).length) ||
         (P.ogConnOff && Object.keys(P.ogConnOff).length) ||
-        (P.ogScrewOff && Object.keys(P.ogScrewOff).length)) ogSfx += "_edit";
+        (P.ogScrewOff && Object.keys(P.ogScrewOff).length) ||
+        (P.ogChamf && Object.keys(P.ogChamf).length) ||
+        (P.ogCornerSharp && Object.keys(P.ogCornerSharp).length)) ogSfx += "_edit";
     return "opengrid_board_" + db.W + "x" + db.H + "_" +
            (db.T === OG.LITE_T ? "lite" : "full") + ogSfx;
   }
@@ -4146,6 +4237,7 @@ document.getElementById("btn3d").addEventListener("click", exit2D);
 var btnOgReset = document.getElementById("btnOgReset");
 if (btnOgReset) btnOgReset.addEventListener("click", function () {
   P.ogCellOff = {}; P.ogConnOff = {}; P.ogScrewOff = {};
+  P.ogChamf = {}; P.ogCornerSharp = {};
   onChange(false);
   note(t("og_reset_done"), false);
 });

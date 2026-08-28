@@ -33,7 +33,7 @@ A parametric 3D generator plugin for **OrcaSlicer** that configures, previews, a
   * Staggered seam layout to prevent weak 4-way corner intersections.
   * Auto-detection of active printer bed dimensions from OrcaSlicer.
 
-### 🟩 openGrid Boards (v1.7.0)
+### 🟩 openGrid Boards (v1.8.0)
 * **Standard-Compliant Geometry**: Boards are generated to the **openGrid specification** (28 mm grid, 6.8 mm full thickness, snap-compatible sockets) — the same geometry as the [openGrid Studio](https://ogstudio.sudomaker.com/) web generator, verified volume-for-volume against its manifold pipeline.
 * **Board Types**:
   * **Full Board**: 6.8 mm thick with the standard capture-chamfer socket grid.
@@ -43,6 +43,7 @@ A parametric 3D generator plugin for **OrcaSlicer** that configures, previews, a
   * Optional **countersinks** with configurable angle (front side).
   * Optional **backside pockets** with shrink/inset/countersink controls.
 * **Connector Cutouts**: Side connector notches on all border nodes, ready for standard openGrid connectors.
+* **2D Board Editor**: Orthographic top view with click editing, following the openGrid Studio interaction model — toggle cells, screw bores, and connectors; cycle a screw node between *hole / bare / chamfered ring* (the ring keeps the diamond ribs but drops the bore); restore **sharp outer corners** on the model outline, including corners exposed by cell deletions; a *Reset edits* button clears everything.
 * **Flip-Stacked Copies**: Stack 2–10 boards in one STL using the same upside-down alternation + air gap mechanism as the baseplates (no Interface Layer or ironing required).
 * **Live Stats & Naming**: Board statistics (tiles, holes, volume) and descriptive file names (`opengrid_board_2x2_lite.stl`, …).
 
