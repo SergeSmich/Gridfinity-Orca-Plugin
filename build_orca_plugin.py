@@ -59,7 +59,7 @@ TEMPLATE = '''# /// script
 # name = "Gridfinity Bin & Baseplate Generator"
 # description = "Parametric Gridfinity bins, interlocking baseplates, and openGrid boards: custom compartments, exact mm sizing with edge padding, flip-stacked copies, full board / lite openGrid types with screws, connectors and countersinks, EN/RU interface, 3D WebGL preview, and direct build plate drop."
 # author = "jonas"
-# version = "1.7.1"
+# version = "1.7.2"
 """Gridfinity bin and baseplate generator for OrcaSlicer.
 
 Registers two capabilities:
@@ -341,6 +341,15 @@ class _GridfinityCore:
                 reply({"type": "bed", "x": width, "y": depth, "printer": printer})
             return
 
+        if kind == "pick_dir":
+            try:
+                path = self._pick_dir(message.get("start", ""))
+                reply({"type": "pick_dir", "path": path})
+            except Exception as exc:
+                _log("folder dialog failed:", exc)
+                reply({"type": "pick_dir", "path": "", "error": str(exc)})
+            return
+
         if kind != "save_stl":
             return
 
@@ -369,6 +378,50 @@ class _GridfinityCore:
                 _log("could not report placement result:", exc)
 
         threading.Thread(target=worker, name="gridfinity-place", daemon=True).start()
+
+    def _pick_dir(self, start):
+        """System folder picker; returns "" when the user cancels."""
+        start = (start or "").strip().strip('"').strip("'")
+        if not os.path.isdir(start):
+            start = ""
+        title = "Select the STL export folder"
+        if sys.platform.startswith("win"):
+            def psq(s):
+                return "'" + s.replace("'", "''") + "'"
+            script = ("Add-Type -AssemblyName System.Windows.Forms | Out-Null; "
+                      "$o = New-Object System.Windows.Forms.Form; $o.TopMost = $True; "
+                      "$f = New-Object System.Windows.Forms.FolderBrowserDialog; "
+                      "$f.Description = " + psq(title) + "; ")
+            if start:
+                script += "$f.SelectedPath = " + psq(start) + "; "
+            script += ("if ($f.ShowDialog($o) -eq "
+                       "[System.Windows.Forms.DialogResult]::OK) { $f.SelectedPath }")
+            # CREATE_NO_WINDOW: no console flash behind the dialog
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            out = subprocess.run(
+                ["powershell", "-NoProfile", "-STA", "-Command", script],
+                capture_output=True, text=True, timeout=600, creationflags=flags)
+            return out.stdout.strip()
+        if sys.platform == "darwin":
+            script = 'POSIX path of (choose folder with prompt "%s")' % title
+            if start:
+                esc = json.dumps(start)[1:-1]   # escapes backslash and quote
+                script = ('POSIX path of (choose folder with prompt "%s" '
+                          'default location POSIX file "%s")' % (title, esc))
+            out = subprocess.run(["osascript", "-e", script],
+                                 capture_output=True, text=True, timeout=600)
+            return out.stdout.strip() if out.returncode == 0 else ""
+        for cmd in (["zenity", "--file-selection", "--directory", "--title", title],
+                    ["kdialog", "--getexistingdirectory",
+                     start or os.path.expanduser("~"), "--title", title]):
+            try:
+                out = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            except FileNotFoundError:
+                continue
+            if out.returncode == 0 and out.stdout.strip():
+                return out.stdout.strip()
+            return ""
+        raise RuntimeError("no folder picker available (install zenity or kdialog)")
 
     def _write_stl(self, name, payload_b64, custom_dir=""):
         if not payload_b64:

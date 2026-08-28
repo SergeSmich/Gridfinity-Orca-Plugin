@@ -437,6 +437,7 @@ canvas.dragging { cursor:grabbing; }
       <div class="row" id="exportDirRow" hidden style="margin-bottom:10px">
         <label for="exportDir" data-i="exp_dir">Export folder</label>
         <input id="exportDir" type="text" style="flex:1; min-width:0" spellcheck="false">
+        <button id="btnDir" type="button" data-i="exp_dir_pick" style="margin-left:6px; white-space:nowrap">📂 Browse…</button>
       </div>
       <div id="prog" class="prog" hidden>
         <div class="track"><div class="fill" id="progFill"></div></div>
@@ -2788,6 +2789,11 @@ var I18N = {
     og_conn: "Board-to-board connectors",
     og_hint: "28 mm openGrid lattice; 3 OG tiles = 2 Gridfinity units. Lite = the top 4 mm band of the full board. Click a screw hole in the preview to remove or restore it.",
     exp_dir: "Export folder (empty = plugin default)",
+    exp_dir_pick: "\ud83d\udcc2 Browse\u2026",
+    dir_asking: "Opening the system folder dialog \u2014 choose a folder there\u2026",
+    dir_set: "Export folder: {p}",
+    dir_fail: "Folder dialog failed: {e}",
+    dir_cancel: "Folder selection cancelled.",
     og_summary: "{w} &times; {h} tiles &middot; snap {snap} &middot; screws {scr} &middot; connectors {conn}",
     h_binsize: "Bin Size", l_width: "Width", l_depth: "Depth", l_height: "Height",
     h_platesize: "Baseplate Size", pm_units: "Grid Units", pm_mm: "Dimensions (mm)",
@@ -2863,6 +2869,11 @@ var I18N = {
     og_conn: "Коннекторы панель-панель",
     og_hint: "Решётка openGrid 28 мм; 3 тайла OG = 2 юнита Gridfinity. Lite = верхние 4 мм полной доски. Клик по отверстию под винт в превью удаляет или возвращает его.",
     exp_dir: "Папка экспорта (пусто = папка плагина)",
+    exp_dir_pick: "\ud83d\udcc2 Обзор\u2026",
+    dir_asking: "Открываю системный диалог \u2014 выберите папку в нём\u2026",
+    dir_set: "Папка экспорта: {p}",
+    dir_fail: "Не удалось открыть диалог: {e}",
+    dir_cancel: "Выбор папки отменён.",
     og_summary: "тайлов {w} &times; {h} &middot; снапов {snap} &middot; шурупов {scr} &middot; коннекторов {conn}",
     h_binsize: "Размер ящика", l_width: "Ширина", l_depth: "Глубина", l_height: "Высота",
     h_platesize: "Размер основания", pm_units: "Сетка (юниты)", pm_mm: "Размеры (мм)",
@@ -3001,6 +3012,12 @@ if (ORCA) {
   try { dirEl.value = localStorage.getItem("gf_export_dir") || ""; } catch (e2) {}
   dirEl.addEventListener("input", function () {
     try { localStorage.setItem("gf_export_dir", dirEl.value); } catch (e3) {}
+  });
+  var btnDir = document.getElementById("btnDir");
+  if (btnDir) btnDir.addEventListener("click", function () {
+    btnDir.disabled = true;
+    note(t("dir_asking"), false);
+    ORCA.postMessage({ type: "pick_dir", start: dirEl.value });
   });
   document.getElementById("bedRow").hidden = false;
 }
@@ -3147,9 +3164,11 @@ var bedFrom = null;
 function frameCamera() {
   var d = P.mode === "plate" ? derivePlate(P)
         : P.mode === "og" ? deriveBoard(P) : derive(P);
-  var top = P.mode === "plate" ? d.HTotal : d.TOP;
+  var top = (d.HTotal != null) ? d.HTotal : d.TOP;
+  if (!isFinite(top)) top = 20;
   cam.target = [0, 0, top * 0.42];
-  cam.dist = Math.max(d.OX, d.OY, top) * 2.0 + 55;
+  var span = Math.max(d.OX || 0, d.OY || 0, top || 0);
+  cam.dist = (isFinite(span) && span > 0 ? span : 120) * 2.0 + 55;
   needsDraw = true;
 }
 function setView(v) {
@@ -4035,6 +4054,19 @@ if (ORCA && typeof ORCA.onMessage === "function") {
   ORCA.onMessage(function (m) {
     if (!m) return;
     if (m.type === "bed") applyBed(m);
+    if (m.type === "pick_dir") {
+      var b = document.getElementById("btnDir");
+      if (b) b.disabled = false;
+      if (m.path) {
+        dirEl.value = m.path;
+        try { localStorage.setItem("gf_export_dir", m.path); } catch (e4) {}
+        note(t("dir_set", { p: m.path }), false);
+      } else if (m.error) {
+        note(t("dir_fail", { e: m.error }), true);
+      } else {
+        note(t("dir_cancel"), false);
+      }
+    }
     if (m.type === "bed_failed") {
       bedFrom.textContent = t("bed_failed");
       note(t("bed_manual", { e: m.error }), true);
