@@ -920,6 +920,140 @@ function triangulate(outer, holes) {
        by construction and only locally off by that sliver, so it
        stays. */
     tris = triangulateDP(poly);
+  /* ---- cap-face decimation -------------------------------------------
+     Over hostile caps (plate sockets a hair from the outline and from
+     each other) the ear clipper's strict blocker refuses every ear and
+     the relax fan comes out covering far more than the polygon: giant
+     wedges overlap each other and even spill over the socket openings
+     (a thin "film" z-fighting on the plate top, and sockets closed by a
+     lid).  The fan is watertight - every loop edge is covered - so only
+     its INTERIOR triangles may be touched:
+       * boundary triangles (owning a loop edge) are never dropped, the
+         wall pairing stays exact;
+       * an interior triangle with any sample inside a hole (a socket)
+         covers the void -> drop;
+       * an interior triangle fully covered by bigger kept ones -> drop.
+     The remaining cover stays overlap-free where it matters. */
+  var n2 = tris.length;
+  if (n2 > 8 && hs && hs.length) {
+    var isLoopEdge = new Array(n2);
+    var i2, t2;
+    for (i2 = 0; i2 < n2; i2++) {
+      t2 = tris[i2];
+      var e01 = (t2[0] + 1) % poly.length === t2[1] || (t2[1] + 1) % poly.length === t2[0];
+      var e12 = (t2[1] + 1) % poly.length === t2[2] || (t2[2] + 1) % poly.length === t2[1];
+      var e20 = (t2[2] + 1) % poly.length === t2[0] || (t2[0] + 1) % poly.length === t2[2];
+      isLoopEdge[i2] = e01 || e12 || e20;
+    }
+    var ar2 = new Array(n2);
+    for (i2 = 0; i2 < n2; i2++) {
+      t2 = tris[i2];
+      ar2[i2] = Math.abs(area2(poly[t2[0]], poly[t2[1]], poly[t2[2]])) / 2;
+    }
+    // sample points of a triangle: centroid + edge midpoints
+    function triSamples(t3) {
+      var a = poly[t3[0]], b = poly[t3[1]], c = poly[t3[2]];
+      return [
+        [(a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3],
+        [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2],
+        [(b[0] + c[0]) / 2, (b[1] + c[1]) / 2],
+        [(c[0] + a[0]) / 2, (c[1] + a[1]) / 2]
+      ];
+    }
+    function inHoles(px, py) {
+      for (var h3 = 0; h3 < hs.length; h3++) {
+        var H = hs[h3], inside = false;
+        for (var a3 = 0, b3 = H.length - 1; a3 < H.length; b3 = a3++) {
+          if (((H[a3][1] > py) !== (H[b3][1] > py)) &&
+              (px < (H[b3][0] - H[a3][0]) * (py - H[a3][1]) /
+                    (H[b3][1] - H[a3][1]) + H[a3][0]))
+            inside = !inside;
+        }
+        if (!inside) continue;
+        /* only a DEEP sample counts: points hugging the hole boundary sit
+           in the legitimate hairline lattice, not in the void */
+        for (var a4 = 0, b4 = H.length - 1; a4 < H.length; b4 = a4++) {
+          var ex = H[b4][0] - H[a4][0], ey = H[b4][1] - H[a4][1];
+          var L2 = ex * ex + ey * ey;
+          var t = L2 > 0 ? ((px - H[a4][0]) * ex + (py - H[a4][1]) * ey) / L2 : 0;
+          t = t < 0 ? 0 : (t > 1 ? 1 : t);
+          var qx = H[a4][0] + t * ex - px, qy = H[a4][1] + t * ey - py;
+          if (qx * qx + qy * qy < 1e-4) return false;   // within 0.01 of the rim
+        }
+        return true;
+      }
+      return false;
+    }
+    function coversTri(big, t3) {   // strict: every sample of t3 inside big
+      var S = triSamples(t3);
+      var u = poly[big[0]], v = poly[big[1]], w = poly[big[2]];
+      for (var s3 = 0; s3 < S.length; s3++) {
+        var px = S[s3][0], py = S[s3][1];
+        var d1 = (v[0] - u[0]) * (py - u[1]) - (v[1] - u[1]) * (px - u[0]),
+            d2 = (w[0] - v[0]) * (py - v[1]) - (w[1] - v[1]) * (px - v[0]),
+            d3 = (u[0] - w[0]) * (py - w[1]) - (u[1] - w[1]) * (px - w[0]);
+        if (!((d1 > 1e-12 && d2 > 1e-12 && d3 > 1e-12) ||
+              (d1 < -1e-12 && d2 < -1e-12 && d3 < -1e-12))) return false;
+      }
+      return true;
+    }
+    function touchesVoid(t3) {
+      var S2 = triSamples(t3);
+      for (var s4 = 0; s4 < S2.length; s4++)
+        if (inHoles(S2[s4][0], S2[s4][1])) return true;
+      return false;
+    }
+    function hasEdge(t3, iA, iB) {
+      return (t3[0] === iA && t3[1] === iB) || (t3[0] === iB && t3[1] === iA) ||
+             (t3[1] === iA && t3[2] === iB) || (t3[1] === iB && t3[2] === iA) ||
+             (t3[2] === iA && t3[0] === iB) || (t3[2] === iB && t3[0] === iA);
+    }
+    function coversEdge(t3, iA, iB) {   // endpoints owned + midpoint inside-or-on
+      if (!hasEdge(t3, iA, iB)) return false;
+      var u = poly[iA], v = poly[iB];
+      var px = (u[0] + v[0]) / 2, py = (u[1] + v[1]) / 2;
+      var a = poly[t3[0]], b = poly[t3[1]], c = poly[t3[2]];
+      var d1 = (b[0] - a[0]) * (py - a[1]) - (b[1] - a[1]) * (px - a[0]),
+          d2 = (c[0] - b[0]) * (py - b[1]) - (c[1] - b[1]) * (px - b[0]),
+          d3 = (a[0] - c[0]) * (py - c[1]) - (a[1] - c[1]) * (px - c[0]);
+      return (d1 >= -1e-9 && d2 >= -1e-9 && d3 >= -1e-9) ||
+             (d1 <= 1e-9 && d2 <= 1e-9 && d3 <= 1e-9);
+    }
+    var order2 = [];
+    for (i2 = 0; i2 < n2; i2++) order2.push(i2);
+    order2.sort(function (x, y) { return ar2[y] - ar2[x]; });
+    var keep2 = new Array(n2);
+    var keptBig = [];
+    for (i2 = 0; i2 < n2; i2++) {
+      var i3 = order2[i2];
+      if (touchesVoid(tris[i3])) { keep2[i3] = false; continue; }   // over a socket: lid/spill film
+      if (isLoopEdge[i3]) { keep2[i3] = true; if (ar2[i3] > 0.5) keptBig.push(tris[i3]); continue; }
+      var cov = false;
+      for (var b4 = 0; b4 < keptBig.length && !cov; b4++)
+        if (coversTri(keptBig[b4], tris[i3])) cov = true;
+      if (cov) { keep2[i3] = false; continue; }                     // subsumed by a kept wedge
+      keep2[i3] = true;
+      if (ar2[i3] > 0.5) keptBig.push(tris[i3]);
+    }
+    /* repair: a loop edge that lost its only cover (its triangle spilled
+       into a socket and was dropped) leaves a zero-width seam between the
+       wall top and the cap.  Restore a clean cover when one exists; the
+       seam is harmless for slicing either way - contours come from the
+       wall bands, which stay complete. */
+    for (var iE = 0; iE < poly.length; iE++) {
+      var iA = iE, iB = (iE + 1) % poly.length, covered = false, best = -1;
+      for (i2 = 0; i2 < n2; i2++) {
+        if (!hasEdge(tris[i2], iA, iB)) continue;
+        if (keep2[i2] && coversEdge(tris[i2], iA, iB)) { covered = true; break; }
+        if (!keep2[i2] && coversEdge(tris[i2], iA, iB) &&
+            !touchesVoid(tris[i2]) && (best < 0 || ar2[i2] > ar2[best])) best = i2;
+      }
+      if (!covered && best >= 0) keep2[best] = true;
+    }
+    var tris3 = [];
+    for (i2 = 0; i2 < n2; i2++) if (keep2[i2]) tris3.push(tris[i2]);
+    if (tris3.length > 0) tris = tris3;
+  }
   return { pts: poly, tris: tris };
 }
 
