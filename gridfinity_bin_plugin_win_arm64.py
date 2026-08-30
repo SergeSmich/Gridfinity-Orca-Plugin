@@ -6,7 +6,7 @@
 # name = "Gridfinity Bin & Baseplate Generator"
 # description = "Parametric Gridfinity bins, interlocking baseplates, and openGrid boards: custom compartments, exact mm sizing with edge padding, flip-stacked copies, full board / lite openGrid types with screws, connectors, countersinks, node chamfer rings and sharp outer corners, EN/RU interface, 3D WebGL preview, and direct build plate drop."
 # author = "jonas"
-# version = "1.8.1"
+# version = "1.8.2"
 """Gridfinity bin and baseplate generator for OrcaSlicer.
 
 Registers two capabilities:
@@ -1416,6 +1416,101 @@ function triangulateDP(poly) {
 }
 
 // outer: CCW. holes: array of loops (any winding). Returns {pts, tris}.
+/* Exact scanline triangulation of {outer minus holes} (all loops simple,
+   holes strictly inside outer).  Slabs run between the sorted vertex-y
+   events; inside a slab the crossing structure is constant, so the kept
+   x-intervals at the two rows pair up into exact trapezoids - full
+   coverage, zero overlaps, and every loop edge lies on a trapezoid side.
+   Returns index triples into pts (new vertices appended), or null when a
+   slab comes out inconsistent (numerical trouble) so the caller can fall
+   back to the bridged ear clipper. */
+function scanTri(outer, holes, pts) {
+  var ys = [], i, h, k;
+  for (i = 0; i < outer.length; i++) ys.push(outer[i][1]);
+  for (h = 0; h < holes.length; h++)
+    for (i = 0; i < holes[h].length; i++) ys.push(holes[h][i][1]);
+  ys.sort(function (a, b) { return a - b; });
+  var Y = [];
+  for (i = 0; i < ys.length; i++)
+    if (!i || ys[i] - Y[Y.length - 1] > 1e-9) Y.push(ys[i]);
+  if (Y.length < 2) return null;
+  /* edges crossing row y, sorted by their x at y (mid-slab row rule:
+     the crossing set is constant within a slab, and a hole only ever
+     enters the interval set at one of its own vertex events) */
+  function crossingEdges(loop, y) {
+    var out = [], q4;
+    for (q4 = 0; q4 < loop.length; q4++) {
+      var p = loop[q4], q = loop[(q4 + 1) % loop.length];
+      if ((p[1] <= y && q[1] > y) || (q[1] <= y && p[1] > y))
+        out.push([p, q]);
+    }
+    out.sort(function (A, B) {
+      var ax = A[0][0] + (y - A[0][1]) * (A[1][0] - A[0][0]) / (A[1][1] - A[0][1]);
+      var bx = B[0][0] + (y - B[0][1]) * (B[1][0] - B[1][0]) / (B[1][1] - B[0][1]);
+      return ax - bx;
+    });
+    return out;
+  }
+  function xAt(e, y) {
+    var p = e[0], q = e[1];
+    return p[0] + (y - p[1]) * (q[0] - p[0]) / (q[1] - p[1]);
+  }
+  function emit(ax, ay, bx, by, cx, cy) {
+    if (Math.abs((bx - ax) * (cy - ay) - (cx - ax) * (by - ay)) < 1e-12) return;
+    pts.push([ax, ay]);
+    var ia = pts.length - 1;
+    pts.push([bx, by]);
+    var ib = pts.length - 1;
+    pts.push([cx, cy]);
+    var ic = pts.length - 1;
+    trisOut.push([ia, ib, ic]);
+  }
+  var trisOut = [];
+  for (k = 0; k + 1 < Y.length; k++) {
+    var y0 = Y[k], y1 = Y[k + 1];
+    if (y1 - y0 < 1e-9) continue;
+    var yc = (y0 + y1) / 2;
+    var crossings = [];                       // [edge, isOuter]
+    var oe = crossingEdges(outer, yc);
+    var q6;
+    for (q6 = 0; q6 < oe.length; q6++) crossings.push([oe[q6], 1]);
+    for (h = 0; h < holes.length; h++) {
+      var he = crossingEdges(holes[h], yc);
+      for (q6 = 0; q6 < he.length; q6++) crossings.push([he[q6], 0]);
+    }
+    crossings.sort(function (A, B) {
+      return xAt(A[0], yc) - xAt(B[0], yc);
+    });
+
+    /* walk: even-odd over ALL crossings; region = inside outer (odd
+       outer count) and even hole count */
+    var oCnt = 0, hCnt = 0, bad = false, firstE = null;
+    var segs = [];                            // [firstEdge, lastEdge]
+    for (q6 = 0; q6 < crossings.length; q6++) {
+      if (crossings[q6][1]) oCnt++;
+      else hCnt++;
+      var inRegion = (oCnt % 2 === 1) && (hCnt % 2 === 0);
+      if (inRegion) {
+        if (firstE === null) firstE = crossings[q6][0];
+      } else if (firstE !== null) {
+        segs.push([firstE, crossings[q6][0]]);   // the closing edge bounds the interval
+        firstE = null;
+      }
+    }
+    if (firstE !== null) return null;             // unbalanced crossings
+    if (bad) return null;
+    for (q6 = 0; q6 < segs.length; q6++) {
+      var eA = segs[q6][0], eB = segs[q6][1];
+      var a0 = xAt(eA, y0), a1 = xAt(eA, y1);
+      var b0 = xAt(eB, y0), b1 = xAt(eB, y1);
+      if (b0 - a0 < 1e-9 && b1 - a1 < 1e-9) continue;
+      emit(a0, y0, b0, y0, b1, y1);
+      emit(a0, y0, b1, y1, a1, y1);
+    }
+  }
+  return trisOut.length ? trisOut : null;
+}
+
 function triangulate(outer, holes) {
   var poly = signedArea(outer) < 0 ? reverseLoop(outer) : outer.slice();
   if (holes && holes.length) {
@@ -1428,6 +1523,21 @@ function triangulate(outer, holes) {
       for (i = 0; i < B.length; i++) if (B[i][0] < bx) bx = B[i][0];
       return ax - bx;
     });
+    /* preferred path: exact scanline decomposition - no bridge, no fan,
+       no film and no cracks (v1.8.1's fan decimation could tear thin
+       seams around the connector notch windows at deeper plate sizes) */
+    var newPts = [];
+    var st = scanTri(poly, hs, newPts);
+    if (st) {
+      var base = poly.length, q10;
+      for (q10 = 0; q10 < newPts.length; q10++) poly.push(newPts[q10]);
+      for (q10 = 0; q10 < st.length; q10++) {
+        st[q10][0] += base;
+        st[q10][1] += base;
+        st[q10][2] += base;
+      }
+      return { pts: poly, tris: st };
+    }
     for (var i = 0; i < hs.length; i++) {
       var next = bridgeHole(poly, hs[i]);
       if (next) poly = next;
@@ -1492,7 +1602,7 @@ function triangulate(outer, holes) {
         [(c[0] + a[0]) / 2, (c[1] + a[1]) / 2]
       ];
     }
-    function inHoles(px, py) {
+    function inHolesM(px, py, m2) {
       for (var h3 = 0; h3 < hs.length; h3++) {
         var H = hs[h3], inside = false;
         for (var a3 = 0, b3 = H.length - 1; a3 < H.length; b3 = a3++) {
@@ -1510,12 +1620,13 @@ function triangulate(outer, holes) {
           var t = L2 > 0 ? ((px - H[a4][0]) * ex + (py - H[a4][1]) * ey) / L2 : 0;
           t = t < 0 ? 0 : (t > 1 ? 1 : t);
           var qx = H[a4][0] + t * ex - px, qy = H[a4][1] + t * ey - py;
-          if (qx * qx + qy * qy < 1e-4) return false;   // within 0.01 of the rim
+          if (qx * qx + qy * qy < m2) return false;   // within the rim slack
         }
         return true;
       }
       return false;
     }
+    function inHoles(px, py) { return inHolesM(px, py, 1e-4); }
     function coversTri(big, t3) {   // strict: every sample of t3 inside big
       var S = triSamples(t3);
       var u = poly[big[0]], v = poly[big[1]], w = poly[big[2]];
@@ -1551,36 +1662,84 @@ function triangulate(outer, holes) {
       return (d1 >= -1e-9 && d2 >= -1e-9 && d3 >= -1e-9) ||
              (d1 <= 1e-9 && d2 <= 1e-9 && d3 <= 1e-9);
     }
+    /* denser sample set: centroid, edge midpoints, vertex-hugging points */
+    function triSamples7(t3) {
+      var a = poly[t3[0]], b = poly[t3[1]], c = poly[t3[2]];
+      return [
+        [(a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3],
+        [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2],
+        [(b[0] + c[0]) / 2, (b[1] + c[1]) / 2],
+        [(c[0] + a[0]) / 2, (c[1] + a[1]) / 2],
+        [(2 * a[0] + b[0] + c[0]) / 4, (2 * a[1] + b[1] + c[1]) / 4],
+        [(a[0] + 2 * b[0] + c[0]) / 4, (a[1] + 2 * b[1] + c[1]) / 4],
+        [(a[0] + b[0] + 2 * c[0]) / 4, (a[1] + b[1] + 2 * c[1]) / 4]
+      ];
+    }
+    function ptInTri(pt, t3) {
+      var a = poly[t3[0]], b = poly[t3[1]], c = poly[t3[2]];
+      var e1 = (b[0] - a[0]) * (pt[1] - a[1]) - (b[1] - a[1]) * (pt[0] - a[0]),
+          e2 = (c[0] - b[0]) * (pt[1] - b[1]) - (c[1] - b[1]) * (pt[0] - b[0]),
+          e3 = (a[0] - c[0]) * (pt[1] - c[1]) - (a[1] - c[1]) * (pt[0] - c[0]);
+      return (e1 > 1e-12 && e2 > 1e-12 && e3 > 1e-12) ||
+             (e1 < -1e-12 && e2 < -1e-12 && e3 < -1e-12);
+    }
     var order2 = [];
     for (i2 = 0; i2 < n2; i2++) order2.push(i2);
     order2.sort(function (x, y) { return ar2[y] - ar2[x]; });
-    var keep2 = new Array(n2);
+    var keep2 = new Array(n2), dropped2 = [];
     var keptBig = [];
     for (i2 = 0; i2 < n2; i2++) {
       var i3 = order2[i2];
-      if (touchesVoid(tris[i3])) { keep2[i3] = false; continue; }   // over a socket: lid/spill film
+      if (touchesVoid(tris[i3])) { keep2[i3] = false; dropped2.push(i3); continue; }  // over a socket: lid/spill film
       if (isLoopEdge[i3]) { keep2[i3] = true; if (ar2[i3] > 0.5) keptBig.push(tris[i3]); continue; }
       var cov = false;
       for (var b4 = 0; b4 < keptBig.length && !cov; b4++)
         if (coversTri(keptBig[b4], tris[i3])) cov = true;
-      if (cov) { keep2[i3] = false; continue; }                     // subsumed by a kept wedge
+      if (cov) { keep2[i3] = false; dropped2.push(i3); continue; }    // subsumed by a kept wedge
       keep2[i3] = true;
       if (ar2[i3] > 0.5) keptBig.push(tris[i3]);
     }
-    /* repair: a loop edge that lost its only cover (its triangle spilled
-       into a socket and was dropped) leaves a zero-width seam between the
-       wall top and the cap.  Restore a clean cover when one exists; the
-       seam is harmless for slicing either way - contours come from the
-       wall bands, which stay complete. */
+    /* territory restore: a dropped triangle whose own samples are no longer
+       covered by the kept set was holding UNIQUE territory - near the
+       connector notch windows the relax fan is sparse (unlike the dense
+       socket fans) and dropping its wedges tore zero-width cracks into the
+       top face.  Put such triangles back; truly redundant film (the giant
+       socket-spill wedges, subsumed interiors) stays dropped because the
+       kept fan covers their samples anyway.  Samples inside the holes are
+       not territory - they are skipped. */
+    for (var d5 = 0; d5 < dropped2.length; d5++) {
+      var i4 = dropped2[d5];
+      /* territory = samples in real open material.  Samples hugging a
+         hole rim (0.05 mm slack - wider than any hairline lattice band)
+         are skipped: the dropped spill lids' only "uncovered" samples
+         live in that band, while the sparse fan around a connector notch
+         leaves multi-mm cracks that genuinely need their wedges back. */
+      var S5 = triSamples7(tris[i4]);
+      var need = false;
+      for (var s5 = 0; s5 < S5.length && !need; s5++) {
+        if (inHolesM(S5[s5][0], S5[s5][1], 2.5e-3)) continue;
+        var cov5 = false;
+        for (var b5 = 0; b5 < n2 && !cov5; b5++)
+          if (keep2[b5] && ptInTri(S5[s5], tris[b5])) cov5 = true;
+        if (!cov5) need = true;
+      }
+      if (need) keep2[i4] = true;
+    }
+    /* repair: a loop edge that lost its only cover leaves a zero-width
+       seam between the wall top and the cap.  Restore the cleanest cover
+       when one exists; the seam is harmless for slicing either way -
+       contours come from the wall bands, which stay complete. */
     for (var iE = 0; iE < poly.length; iE++) {
-      var iA = iE, iB = (iE + 1) % poly.length, covered = false, best = -1;
+      var iA = iE, iB = (iE + 1) % poly.length, covered = false, best = -1, bestV = -1;
       for (i2 = 0; i2 < n2; i2++) {
         if (!hasEdge(tris[i2], iA, iB)) continue;
         if (keep2[i2] && coversEdge(tris[i2], iA, iB)) { covered = true; break; }
-        if (!keep2[i2] && coversEdge(tris[i2], iA, iB) &&
-            !touchesVoid(tris[i2]) && (best < 0 || ar2[i2] > ar2[best])) best = i2;
+        if (!keep2[i2] && coversEdge(tris[i2], iA, iB)) {
+          if (!touchesVoid(tris[i2]) && (best < 0 || ar2[i2] > ar2[best])) best = i2;
+          if (touchesVoid(tris[i2]) && (bestV < 0 || ar2[i2] < ar2[bestV])) bestV = i2;
+        }
       }
-      if (!covered && best >= 0) keep2[best] = true;
+      if (!covered) keep2[best >= 0 ? best : bestV] = true;
     }
     var tris3 = [];
     for (i2 = 0; i2 < n2; i2++) if (keep2[i2]) tris3.push(tris[i2]);
