@@ -2106,7 +2106,11 @@ function* plateSteps(p, seg) {
 
   var plan = planPlate(p);
   var colEdge = cumulate(plan.cols);
-  var gap = Math.max(0, p.plateGap || 0);
+  /* a 1 um modeling epsilon: at gap = 0 the segments' seam walls would sit
+     exactly on top of each other (3-4 faces per seam edge - the mesh
+     checker reads that as open edges).  The epsilon keeps the pieces
+     visually fused but makes every seam edge strictly manifold. */
+  var gap = Math.max(0.001, p.plateGap || 0);
   var levels = d.levels, stackGap = d.stackGap;
   var pieces = 0, perLevel = 0, sx, sy;
 
@@ -3157,7 +3161,163 @@ function buildBoard(p, seg) { return runSteps(boardSteps(p, seg)); }
 /* =====================================================================
    Binary STL
    ===================================================================== */
+/* ---- T-junction welding ---------------------------------------------
+   Holed caps are triangulated by the exact scanline decomposition, whose
+   boundary carries vertices interpolated along the loop edges (the slab
+   event rows).  The wall bands below such a cap still run the original
+   long edge, so the cap's sub-edges have no direct partners: the STL
+   reads as having thousands of open edges even though the surfaces tile
+   the solid exactly.  Before writing the STL we split every triangle
+   edge that passes through an existing mesh vertex, so both sides of
+   every edge end on the same vertices.  Purely topological - no vertex
+   moves, volumes unchanged - and idempotent. */
+function weldTJunctions(mesh) {
+  var n = mesh.count();
+  if (!n) return mesh;
+  var CEL = 4, inv = 1 / CEL;
+  function cellOf(v) { return Math.floor(v * inv); }
+  // unique vertices (hash on 0.1 um) + coarse grid
+  var vmap = new Map(), verts = [], grid = new Map(), i, t;
+  for (t = 0; t < n; t++) for (i = 0; i < 3; i++) {
+    var px = mesh.pos[t * 9 + i * 3], py = mesh.pos[t * 9 + i * 3 + 1], pz = mesh.pos[t * 9 + i * 3 + 2];
+    var k = Math.round(px * 1e4) + "," + Math.round(py * 1e4) + "," + Math.round(pz * 1e4);
+    var vi = vmap.get(k);
+    if (vi === undefined) {
+      vi = verts.length;
+      verts.push([px, py, pz]);
+      vmap.set(k, vi);
+      var ck = cellOf(px) + "," + cellOf(py) + "," + cellOf(pz);
+      var b = grid.get(ck);
+      if (!b) { b = []; grid.set(ck, b); }
+      b.push(vi);
+    }
+  }
+  // triangles as vertex-index triples + their normals
+  var tris = [], nrms = [];
+  for (t = 0; t < n; t++) {
+    var tri = [];
+    for (i = 0; i < 3; i++) {
+      var qx = mesh.pos[t * 9 + i * 3], qy = mesh.pos[t * 9 + i * 3 + 1], qz = mesh.pos[t * 9 + i * 3 + 2];
+      tri.push(vmap.get(Math.round(qx * 1e4) + "," + Math.round(qy * 1e4) + "," + Math.round(qz * 1e4)));
+    }
+    tris.push(tri);
+    nrms.push([mesh.nrm[t * 9], mesh.nrm[t * 9 + 1], mesh.nrm[t * 9 + 2]]);
+  }
+
+  function pointsOnEdge(A, B) {   // existing vertices strictly inside AB
+    var ax = verts[A][0], ay = verts[A][1], az = verts[A][2];
+    var bx = verts[B][0], by = verts[B][1], bz = verts[B][2];
+    var ex = bx - ax, ey = by - ay, ez = bz - az;
+    var L2 = ex * ex + ey * ey + ez * ez;
+    if (L2 < 1e-18) return null;
+    var out = null;
+    var c0 = cellOf(ax), c1 = cellOf(bx),
+        r0 = cellOf(ay), r1 = cellOf(by), s0 = cellOf(az), s1 = cellOf(bz);
+    var steps = Math.max(Math.abs(c1 - c0), Math.abs(r1 - r0), Math.abs(s1 - s0)) + 1;
+    var seen = null;
+    for (var s = 0; s <= steps; s++) {
+      var f = s / steps;
+      var ck = cellOf(ax + ex * f) + "," + cellOf(ay + ey * f) + "," + cellOf(az + ez * f);
+      if (seen === ck) continue;
+      seen = ck;
+      var bkt = grid.get(ck);
+      if (!bkt) continue;
+      for (var bi = 0; bi < bkt.length; bi++) {
+        var vi = bkt[bi];
+        if (vi === A || vi === B) continue;
+        var wx = verts[vi][0] - ax, wy = verts[vi][1] - ay, wz = verts[vi][2] - az;
+        var tt = (wx * ex + wy * ey + wz * ez) / L2;
+        if (tt <= 1e-9 || tt >= 1 - 1e-9) continue;
+        var dx = wx - ex * tt, dy = wy - ey * tt, dz = wz - ez * tt;
+        if (dx * dx + dy * dy + dz * dz > 1e-14) continue;   // 1e-7 mm off the edge
+        if (!out) out = [];
+        out.push([tt, vi]);
+      }
+    }
+    if (!out) return null;
+    out.sort(function (u, v) { return u[0] - v[0]; });
+    var res = [], last = -1;
+    for (var oi = 0; oi < out.length; oi++)
+      if (out[oi][1] !== last) { res.push(out[oi][1]); last = out[oi][1]; }
+    return res;
+  }
+
+  for (var round = 0; round < 24; round++) {
+    // undirected edge -> list of [triIdx, u, v] occurrences
+    var emap = new Map();
+    for (t = 0; t < tris.length; t++) {
+      var T3 = tris[t];
+      for (i = 0; i < 3; i++) {
+        var a3 = T3[i], b3 = T3[(i + 1) % 3];
+        var ek = a3 < b3 ? a3 + "|" + b3 : b3 + "|" + a3;
+        var rec = emap.get(ek);
+        if (!rec) { rec = []; emap.set(ek, rec); }
+        rec.push([t, a3, b3]);
+      }
+    }
+    // triIdx -> [u, v, pts] of its most subdivided edge
+    var splits = null;
+    emap.forEach(function (occ, ek) {
+      var parts = ek.split("|");
+      var pts = pointsOnEdge(+parts[0], +parts[1]);
+      if (!pts) return;
+      for (var o2 = 0; o2 < occ.length; o2++) {
+        var ti = occ[o2][0];
+        if (!splits) splits = new Map();
+        var cur = splits.get(ti);
+        if (!cur || pts.length > cur[2].length) splits.set(ti, [occ[o2][1], occ[o2][2], pts]);
+      }
+    });
+    if (!splits) break;
+    var nt2 = [];
+    for (t = 0; t < tris.length; t++) {
+      if (!splits.has(t)) { nt2.push(tris[t]); continue; }
+      var op = splits.get(t);
+      var T6 = tris[t], N6 = nrms[t];
+      var bi = -1;
+      for (var q4 = 0; q4 < 3; q4++)
+        if ((T6[q4] === op[0] && T6[(q4 + 1) % 3] === op[1]) ||
+            (T6[q4] === op[1] && T6[(q4 + 1) % 3] === op[0])) bi = q4;
+      if (bi < 0) { nt2.push(T6); continue; }
+      var A = T6[bi], B = T6[(bi + 1) % 3], C = T6[(bi + 2) % 3];
+      /* order the chain along THIS triangle's u->v direction: the points
+         were sorted along the undirected key (lower index first), which
+         may be the opposite way */
+      var ux = verts[A][0], uy = verts[A][1], uz = verts[A][2];
+      var vx2 = verts[B][0] - ux, vy2 = verts[B][1] - uy, vz2 = verts[B][2] - uz;
+      var pts6 = op[2].slice().sort(function (p1, p2) {
+        var t1 = (verts[p1][0] - ux) * vx2 + (verts[p1][1] - uy) * vy2 + (verts[p1][2] - uz) * vz2;
+        var t2 = (verts[p2][0] - ux) * vx2 + (verts[p2][1] - uy) * vy2 + (verts[p2][2] - uz) * vz2;
+        return t1 - t2;
+      });
+      var chain = [A];
+      for (var ci = 0; ci < pts6.length; ci++) {
+        var P = pts6[ci];
+        if (P !== A && P !== B) chain.push(P);
+      }
+      chain.push(B);
+      for (var f = 0; f + 1 < chain.length; f++) {
+        nt2.push([chain[f], chain[f + 1], C]);
+        nrms.push(N6);
+      }
+    }
+    tris = nt2;
+  }
+  // write back
+  mesh.pos = [];
+  mesh.nrm = [];
+  for (t = 0; t < tris.length; t++) {
+    var T7 = tris[t], N7 = nrms[t];
+    for (i = 0; i < 3; i++) {
+      mesh.pos.push(verts[T7[i]][0], verts[T7[i]][1], verts[T7[i]][2]);
+      mesh.nrm.push(N7[0], N7[1], N7[2]);
+    }
+  }
+  return mesh;
+}
+
 function toSTL(mesh) {
+  weldTJunctions(mesh);
   var n = mesh.count();
   var buf = new ArrayBuffer(84 + n * 50);
   var dv = new DataView(buf);
@@ -3179,7 +3339,7 @@ function toSTL(mesh) {
   return buf;
 }
 
-if (typeof module !== "undefined") module.exports = { buildBin: buildBin, buildPlate: buildPlate, derive: derive, derivePlate: derivePlate, toSTL: toSTL, DEFAULTS: DEFAULTS };
+if (typeof module !== "undefined") module.exports = { buildBin: buildBin, buildPlate: buildPlate, derive: derive, derivePlate: derivePlate, toSTL: toSTL, weldTJunctions: weldTJunctions, DEFAULTS: DEFAULTS };
 
 /* =====================================================================
    i18n -- EN/RU.  Static nodes carry data-i="key"; dynamic strings go

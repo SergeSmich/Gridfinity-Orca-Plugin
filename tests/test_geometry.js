@@ -20,7 +20,7 @@ src = src.slice(0, src.indexOf("\n", cut));
 
 const moduleShim = { exports: {} };
 const G = new Function("module", "window", "document",
-  src + "\n;return { buildBin, buildPlate, derive, derivePlate, toSTL, DEFAULTS, plateSteps, boardSteps, deriveBoard, ogEmitLevel, ogRibProfile, OG, Mesh };")(moduleShim, undefined, undefined);
+  src + "\n;return { buildBin, buildPlate, buildBoard, derive, derivePlate, toSTL, weldTJunctions, DEFAULTS, plateSteps, boardSteps, deriveBoard, ogEmitLevel, ogRibProfile, OG, Mesh };")(moduleShim, undefined, undefined);
 // the trailing DOM-free slice still executes the exports line above
 
 let failures = 0;
@@ -129,6 +129,24 @@ function noFilm(mesh) {
   }
   return true;
 }
+/* directed edges without an exact reverse partner - what STL analyzers
+ * report as "open edges" */
+function openEdgeCount(mesh) {
+  const seen = new Map();
+  for (const tri of triangles(mesh)) {
+    for (let i = 0; i < 3; i++) {
+      const a = key(tri[i]), b = key(tri[(i + 1) % 3]);
+      seen.set(a + "|" + b, (seen.get(a + "|" + b) || 0) + 1);
+    }
+  }
+  let open = 0;
+  for (const [k, n] of seen) {
+    if (n !== 1) continue;
+    const [a, b] = k.split("|");
+    if (seen.get(b + "|" + a) !== 1) open++;
+  }
+  return open;
+}
 function volume(mesh) {
   let v = 0;
   for (const [[ax,ay,az],[bx,by,bz],[cx,cy,cz]] of triangles(mesh))
@@ -226,7 +244,8 @@ console.log("baseplate stacking:");
   const pAsym = plateParams({ plateExact: true, plate_size_mode: "mm",
     plate_mm_x: 100, plate_mm_y: 90, buf_x_ratio: 30, buf_y_ratio: 20 });
   const rA = G.buildPlate(pAsym, SEG);
-  check("asymmetric pads + stack watertight", watertightWalls(rA.mesh));
+  G.weldTJunctions(rA.mesh);
+  check("asymmetric pads + stack watertight", watertight(rA.mesh));
   check("asymmetric levels share footprint", (() => {
     const bbA = bbox(rA.mesh);
     return Math.abs(bbA.lo[0] + bbA.hi[0] - (rA.derived.padRight - rA.derived.padLeft)) < 1e-6;
@@ -271,7 +290,8 @@ function boardParams(extra) {
     const r = G.ogEmitLevel(p, d2, seg);
     let ok = true, total = 0;
     for (const s of r.solids) {
-      if (!watertightWalls(s)) { ok = false; break; }
+      G.weldTJunctions(s);
+      if (!watertight(s)) { ok = false; break; }
       const v = volume(s);
       if (!(v > 0)) { ok = false; break; }
       total += v;
@@ -314,7 +334,8 @@ function boardParams(extra) {
   const diaScr = centerPiece(rScr);
   check("node diamond plain volume ~763.9", diaPlain && Math.abs(volume(diaPlain) - 763.9) < 0.5, volume(diaPlain).toFixed(2));
   check("screw bore removes material", volume(diaScr) < volume(diaPlain) - 80, volume(diaScr).toFixed(2));
-  check("screw piece watertight", watertightWalls(diaScr));
+  G.weldTJunctions(diaScr);
+  check("screw piece watertight", watertight(diaScr));
 
   // flip stacking: levels alternate upside down, gap preserved
   const p1 = boardParams({ ogStack: false });
@@ -351,6 +372,23 @@ console.log("regression:");
      triangulation, so the tri count legitimately differs from HEAD; the
      volume pin still guards the solid */
   check("bin volume unchanged vs HEAD", Math.abs(volume(ro.mesh) - vol) < 1e-6 * Math.abs(vol), volume(ro.mesh).toFixed(3) + " vs " + vol.toFixed(3));
+
+  /* v1.8.3: the STL export welds T-junctions; every model class must come
+     out with ZERO open edges (what OrcaSlicer's mesh analysis reports) */
+  G.weldTJunctions(rb.mesh);
+  check("bin export has no open edges", openEdgeCount(rb.mesh) === 0, openEdgeCount(rb.mesh) + " open");
+  const pw = G.buildPlate(Object.assign({}, G.DEFAULTS, {
+    mode: "plate", gx: 4, gy: 3, plate_gx: 4, plate_gy: 3,
+    plateConnectors: true, plateGap: 0, plateBase: 0, plateStack: false
+  }), SEG);
+  G.weldTJunctions(pw.mesh);
+  check("plate export has no open edges", openEdgeCount(pw.mesh) === 0, openEdgeCount(pw.mesh) + " open");
+  check("plate export is watertight", watertight(pw.mesh));
+  const bw = G.buildBoard(Object.assign({}, G.DEFAULTS, {
+    mode: "board", ogW: 4, ogH: 3, ogType: "full", ogScrews: true, ogConnectors: true
+  }), { og: 48 });
+  G.weldTJunctions(bw.mesh);
+  check("board export has no open edges", openEdgeCount(bw.mesh) === 0, openEdgeCount(bw.mesh) + " open");
   check("bin unchanged vs HEAD (volume)", Math.abs(volume(ro.mesh) - vol) < 1e-9);
   const rl = G.buildPlate(Object.assign({}, G.DEFAULTS, {
     mode: "plate", gx: 2, gy: 2, plate_gx: 2, plate_gy: 2
